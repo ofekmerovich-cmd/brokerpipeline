@@ -91,13 +91,14 @@ const MOCK_CLIENTS = [
 ];
 
 const DEFAULT_SCRIPT = [
-    { id: 's1', label: 'GREETING', body: `Hi, is this {{first_name}}?\nHey {{first_name}}, this is {{agent_name}} calling on behalf of {{broker_name}}.\nI'm reaching out because we noticed you're in the insurance space and wanted to ask you one quick question — do you have 60 seconds?` },
-    { id: 's2', label: 'IF YES — QUALIFY', body: `Perfect, I'll be quick.\nWe work with independent brokers to fill their calendar with pre-qualified appointments every month — without cold calling or buying shared leads.\n\nQuick question: is getting consistent, qualified appointments something you're currently focused on growing?` },
-    { id: 's3', label: 'IF INTERESTED — BOOK', body: `That's great to hear.\nI actually have {{broker_name}}'s calendar right here — they have availability this Thursday at 2pm or Friday at 10am Eastern time.\nWhich one works better for you?` },
-    { id: 's4', label: 'CONFIRM BOOKING', body: `Perfect — I'm locking in {{chosen_time}} for you right now.\nYou'll get a calendar invite and reminder to {{email}}.\nIs that the best email for you?` },
-    { id: 's5', label: 'OBJECTION: NOT INTERESTED', body: `Totally understand — I appreciate your time {{first_name}}.\nIf things change down the road, don't hesitate to reach out.\nHave a great day!` },
-    { id: 's6', label: 'OBJECTION: CALL BACK LATER', body: `Of course — when would be a better time to reach you?\nMorning or afternoon tomorrow?` },
-    { id: 's7', label: 'VOICEMAIL', body: `Hi {{first_name}}, this is {{agent_name}} calling for {{broker_name}}.\nWe help insurance brokers get 15 to 25 qualified appointments each month using AI automation.\nIf that sounds interesting, call us back at {{phone_number}} or check us out at brokerpipeline.ai.\nHave a great day!` },
+    { id: 's1', label: 'OPENING', body: `Hi, is this {{first_name}}?\nHey {{first_name}}, this is Aria — I'm calling on behalf of {{broker_name}}.\nI'll be super quick — do you have 60 seconds?` },
+    { id: 's2', label: 'IF YES — QUALIFY', body: `Perfect. So we help independent insurance brokers get 15 to 25 pre-qualified appointments every month — fully automated, no cold calling on your end.\nQuick question: is growing your book of business something you're actively focused on right now?` },
+    { id: 's3', label: 'IF INTERESTED — BOOK', body: `That's great. I actually have {{broker_name}}'s calendar right here. They have availability this Thursday at 2pm or Friday at 10am Eastern.\nWhich one works better for you?` },
+    { id: 's4', label: 'CONFIRM BOOKING', body: `Perfect — locking in {{chosen_time}} for you now.\nYou'll get a calendar invite to {{email}}.\nIs that still the best email for you?\nGreat — look forward to connecting you both. Have a wonderful day!` },
+    { id: 's5', label: 'OBJECTION: NOT INTERESTED', body: `Totally understand, I appreciate your time.\nIf things change down the road, don't hesitate to reach out. Have a great day!` },
+    { id: 's6', label: 'OBJECTION: CALL BACK LATER', body: `Of course — when works better, morning or afternoon tomorrow?` },
+    { id: 's7', label: 'OBJECTION: ENOUGH CLIENTS', body: `That's awesome to hear — sounds like things are going well! If you ever want to scale faster without the cold outreach grind, we'd love to show you what we do.\nTake care!` },
+    { id: 's8', label: 'VOICEMAIL', body: `Hi {{first_name}}, this is Aria calling for {{broker_name}}.\nWe help insurance brokers get 15 to 25 qualified appointments per month using AI.\nIf that sounds interesting, check us out at brokerpipeline.ai — or just call us back.\nHave a great day!` },
 ];
 
 const MOCK_TRIGGERS = [
@@ -234,11 +235,12 @@ function ScriptFlowModal({ open, onClose, script }) {
     if (!open) return null;
 
     const nodes = [
-        { id: 'greeting', label: 'Greeting', color: '#2563EB', section: 'GREETING' },
+        { id: 'greeting', label: 'Opening', color: '#2563EB', section: 'OPENING' },
         { id: 'yes', label: 'Yes → Qualify', color: '#22C55E', section: 'IF YES — QUALIFY' },
         { id: 'no', label: 'Not Interested', color: '#EF4444', section: 'OBJECTION: NOT INTERESTED' },
         { id: 'interested', label: 'Interested → Book', color: '#22C55E', section: 'IF INTERESTED — BOOK' },
         { id: 'callback', label: 'Call Back Later', color: '#EAB308', section: 'OBJECTION: CALL BACK LATER' },
+        { id: 'enough', label: 'Enough Clients', color: '#F97316', section: 'OBJECTION: ENOUGH CLIENTS' },
         { id: 'confirm', label: 'Confirm Booking', color: '#8B5CF6', section: 'CONFIRM BOOKING' },
         { id: 'voicemail', label: 'Voicemail', color: '#3B82F6', section: 'VOICEMAIL' },
     ];
