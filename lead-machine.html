@@ -235,10 +235,12 @@ function ICPPage({ clients }) {
     const [selectedClient, setSelectedClient] = useState('');
     const [saved, setSaved] = useState(false);
     const [form, setForm] = useState({
-        job_titles: [], industries_target: [], industries_exclude: [],
-        company_sizes: [], locations: [],
-        keywords_include: [], keywords_exclude: [],
-        min_years: '', notes: '',
+        job_titles: ['Insurance Broker', 'Independent Insurance Agent', 'Insurance Agency Owner', 'Financial Advisor', 'Life Insurance Agent', 'Commercial Insurance Broker', 'Independent Agent'],
+        industries_target: ['Insurance', 'Financial Services'], industries_exclude: [],
+        company_sizes: ['1-10'], locations: ['United States'],
+        keywords_include: [], keywords_exclude: ['State Farm', 'Allstate', 'Farmers', 'Nationwide', 'Liberty Mutual', 'Progressive'],
+        seniority: ['Owner', 'Founder', 'C-Suite', 'Partner'],
+        min_years: '', notes: 'Insurance Brokers USA - ICP v1',
     });
 
     const update = (k, v) => setForm(prev => ({ ...prev, [k]: v }));

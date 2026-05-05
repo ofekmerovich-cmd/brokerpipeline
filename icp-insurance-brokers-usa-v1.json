@@ -1,0 +1,50 @@
+{
+  "name": "Insurance Brokers USA - ICP v1",
+  "version": 1,
+  "created": "2026-05-06",
+  "filters": {
+    "job_titles": [
+      "Insurance Broker",
+      "Independent Insurance Agent",
+      "Insurance Agency Owner",
+      "Financial Advisor",
+      "Life Insurance Agent",
+      "Commercial Insurance Broker",
+      "Independent Agent"
+    ],
+    "seniority": [
+      "Owner",
+      "Founder",
+      "C-Suite",
+      "Partner"
+    ],
+    "company_headcount": "1-10",
+    "location": "United States",
+    "industries": [
+      "Insurance",
+      "Financial Services"
+    ],
+    "exclude_companies": [
+      "State Farm",
+      "Allstate",
+      "Farmers",
+      "Nationwide",
+      "Liberty Mutual",
+      "Progressive"
+    ]
+  },
+  "export": {
+    "fields": [
+      "First Name",
+      "Last Name",
+      "Company",
+      "Title",
+      "Email",
+      "Phone",
+      "LinkedIn URL",
+      "City",
+      "State"
+    ],
+    "initial_batch_size": 50
+  }
+}
