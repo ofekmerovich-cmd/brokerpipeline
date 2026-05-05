@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lead Machine — BrokerPipeline.ai</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        html,body,#root{height:100%}
+        body{background:#0A0A0A;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
+        ::-webkit-scrollbar{width:5px;height:5px}
+        ::-webkit-scrollbar-track{background:transparent}
+        ::-webkit-scrollbar-thumb{background:#2A2A2A;border-radius:99px}
+        .sidebar{transition:transform .25s cubic-bezier(.4,0,.2,1)}
+        input:focus,textarea:focus,select:focus{outline:none}
+        .tbl-row:hover{background:rgba(255,255,255,0.025)}
+        .drag-over{border-color:#2563EB !important;background:rgba(37,99,235,0.05) !important}
+    </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+// ── Supabase ─────────────────────────────────────────────────────────────────
+const SUPABASE_URL      = 'https://glokxezbcrelrndcbhhs.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdsb2t4ZXpiY3JlbHJuZGNiaGhzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5NzMxNzEsImV4cCI6MjA5MzU0OTE3MX0.imnH5pmrXpiKz18fzxyF78b23luNNmu9izM3yBSlbQ4';
+const ADMIN_EMAIL = 'admin@brokerpipeline.ai';
+
+let sb = null;
+try {
+    if (typeof supabase !== 'undefined' && supabase.createClient) {
+        sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    }
+} catch(e) {}
+
+// ── Icon ─────────────────────────────────────────────────────────────────────
+function Icon({ name, size = 18, color = 'currentColor', className = '' }) {
+    const ref = useRef(null);
+    useEffect(() => {
+        if (!ref.current || !lucide?.icons?.[name]) return;
+        ref.current.innerHTML = '';
+        const svg = lucide.createElement(lucide.icons[name]);
+        svg.setAttribute('width', size);
+        svg.setAttribute('height', size);
+        svg.setAttribute('stroke', color);
+        svg.style.display = 'block';
+        svg.style.flexShrink = '0';
+        ref.current.appendChild(svg);
+    }, [name, size, color]);
+    return <span ref={ref} className={`inline-flex items-center ${className}`} />;
+}
+
+// ── Shared UI ────────────────────────────────────────────────────────────────
+const IS = { background: '#0A0A0A', border: '1px solid #1A1A1A', color: '#e5e7eb' };
+const fb = e => e.target.style.borderColor = '#2563EB';
+const bb = e => e.target.style.borderColor = '#1A1A1A';
+
+const BADGE_COLORS = {
+    Active:    'bg-green-500/15 text-green-400 border-green-500/25',
+    Draft:     'bg-gray-500/15 text-gray-400 border-gray-500/25',
+    Paused:    'bg-yellow-500/15 text-yellow-400 border-yellow-500/25',
+    Completed: 'bg-blue-500/15 text-blue-400 border-blue-500/25',
+};
+function Badge({ status }) {
+    return <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium border ${BADGE_COLORS[status] || BADGE_COLORS.Draft}`}>{status}</span>;
+}
+
+function TagInput({ label, value, onChange, placeholder }) {
+    const [input, setInput] = useState('');
+    const add = () => {
+        const v = input.trim();
+        if (v && !value.includes(v)) { onChange([...value, v]); }
+        setInput('');
+    };
+    return (
+        <div>
+            <label className="block text-xs text-gray-400 mb-1.5">{label}</label>
+            <div className="flex flex-wrap gap-1.5 mb-2">
+                {value.map((t, i) => (
+                    <span key={i} className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium"
+                        style={{ background: 'rgba(37,99,235,0.12)', color: '#60A5FA', border: '1px solid rgba(37,99,235,0.25)' }}>
+                        {t}
+                        <button onClick={() => onChange(value.filter((_, j) => j !== i))} className="opacity-60 hover:opacity-100">×</button>
+                    </span>
+                ))}
+            </div>
+            <div className="flex gap-2">
+                <input value={input} onChange={e => setInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
+                    placeholder={placeholder}
+                    className="flex-1 rounded-lg px-3 py-2 text-sm placeholder-gray-600" style={IS} onFocus={fb} onBlur={bb} />
+                <button onClick={add} className="px-3 py-2 rounded-lg text-xs text-blue-400 transition-colors"
+                    style={{ border: '1px solid rgba(37,99,235,0.3)' }}>Add</button>
+            </div>
+        </div>
+    );
+}
+
+function MultiSelect({ label, options, selected, onChange }) {
+    const toggle = v => onChange(selected.includes(v) ? selected.filter(x => x !== v) : [...selected, v]);
+    return (
+        <div>
+            <label className="block text-xs text-gray-400 mb-2">{label}</label>
+            <div className="flex flex-wrap gap-2">
+                {options.map(o => {
+                    const a = selected.includes(o);
+                    return (
+                        <button key={o} onClick={() => toggle(o)}
+                            className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                            style={{ background: a ? 'rgba(37,99,235,0.15)' : '#0A0A0A', border: `1px solid ${a ? '#2563EB' : '#1A1A1A'}`, color: a ? '#60A5FA' : '#9CA3AF' }}>
+                            {a && <span className="mr-1">✓</span>}{o}
+                        </button>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+
+// ── Mock data ────────────────────────────────────────────────────────────────
+const MOCK_CLIENTS = [
+    { id: 'u1', name: 'John Smith', email: 'john@smithinsurance.com' },
+    { id: 'u2', name: 'Sarah Johnson', email: 'sarah@johnsonbrokers.com' },
+    { id: 'u3', name: 'Mike Davis', email: 'mike@davisagency.com' },
+    { id: 'u5', name: 'Robert Williams', email: 'robert@williamscoverage.com' },
+    { id: 'u7', name: 'David Brown', email: 'david@brownagency.com' },
+    { id: 'u8', name: 'Jennifer Martinez', email: 'jennifer@martinezins.com' },
+];
+
+const US_STATES = ['All USA','Alabama','Alaska','Arizona','Arkansas','California','Colorado','Connecticut','Delaware','Florida','Georgia','Hawaii','Idaho','Illinois','Indiana','Iowa','Kansas','Kentucky','Louisiana','Maine','Maryland','Massachusetts','Michigan','Minnesota','Mississippi','Missouri','Montana','Nebraska','Nevada','New Hampshire','New Jersey','New Mexico','New York','North Carolina','North Dakota','Ohio','Oklahoma','Oregon','Pennsylvania','Rhode Island','South Carolina','South Dakota','Tennessee','Texas','Utah','Vermont','Virginia','Washington','West Virginia','Wisconsin','Wyoming'];
+const COMPANY_SIZES = ['Solo (1)','2-10','10-50','50-200','200+'];
+
+const DEFAULT_SEQUENCE = [
+    { day: 1, subject: 'quick question, {{first_name}}', body: 'Hey {{first_name}},\n\nI help independent insurance brokers get 15-25 qualified appointments/month without cold calling or buying shared leads.\n\nAre you currently happy with how you\'re filling your pipeline?\n\n[Sender name]' },
+    { day: 3, subject: 'RE: quick question', body: '{{first_name}},\n\nMost brokers I talk to spend 60% of their time prospecting instead of closing.\n\nWe built an AI system that:\n→ Finds decision-makers actively looking for coverage\n→ Pre-qualifies them before they hit your calendar\n→ Books the meeting directly into your schedule\n\nYou do nothing until the call is already booked.\n\nWorth a 15-min chat this week?\n\n[Sender name]' },
+    { day: 7, subject: 'results from last month', body: '{{first_name}},\n\nLast month we generated 23 qualified appointments for a commercial lines broker in {{location}}.\n\nHe closed 4 of them — $34K in new premiums.\n\nHappy to show you exactly how the system works.\n15 minutes, no pitch, just the process.\n\n{{calendly_link}}\n\n[Sender name]' },
+    { day: 14, subject: 'last one', body: '{{first_name}},\n\nI\'ll keep this short — I\'m opening 2 spots next month for brokers in {{location}}.\n\nIf pipeline is a problem, reply and I\'ll send over details. If not, no worries — I won\'t reach out again.\n\n[Sender name]' },
+    { day: 30, subject: 'circling back', body: '{{first_name}},\n\nChecked back in because we have a case study from a {{specialty}} broker that might be relevant.\n\nMind if I send it over? (2-minute read)\n\n[Sender name]' },
+];
+
+const VARIABLES = ['{{first_name}}','{{company}}','{{specialty}}','{{location}}','{{pain_point}}','{{calendly_link}}'];
+
+const DEFAULT_SCORING_RULES = [
+    { id: 1, field: 'title', condition: 'contains', value: 'Independent', points: 3 },
+    { id: 2, field: 'title', condition: 'contains', value: 'Broker', points: 2 },
+    { id: 3, field: 'title', condition: 'contains', value: 'Agent', points: 1 },
+    { id: 4, field: 'company_size', condition: 'equals', value: '1-10', points: 2 },
+    { id: 5, field: 'company_size', condition: 'equals', value: '10-50', points: 1 },
+    { id: 6, field: 'title', condition: 'contains', value: 'State Farm', points: -5 },
+    { id: 7, field: 'title', condition: 'contains', value: 'Allstate', points: -5 },
+    { id: 8, field: 'years_in_business', condition: 'greater_than', value: '5', points: 2 },
+    { id: 9, field: 'phone', condition: 'exists', value: '', points: 1 },
+    { id: 10, field: 'linkedin_url', condition: 'exists', value: '', points: 1 },
+];
+
+const MOCK_CAMPAIGNS = [
+    { id: 1, client: 'John Smith', sequence: 'Default 5-Step Outreach', leads_enrolled: 142, emails_sent: 412, open_rate: 38.2, reply_rate: 12.1, meetings: 7, status: 'Active', start_date: '2026-04-15' },
+    { id: 2, client: 'Sarah Johnson', sequence: 'Default 5-Step Outreach', leads_enrolled: 298, emails_sent: 891, open_rate: 41.5, reply_rate: 14.8, meetings: 18, status: 'Active', start_date: '2026-03-01' },
+    { id: 3, client: 'Mike Davis', sequence: 'Default 5-Step Outreach', leads_enrolled: 45, emails_sent: 89, open_rate: 29.3, reply_rate: 8.2, meetings: 2, status: 'Paused', start_date: '2026-04-20' },
+    { id: 4, client: 'Robert Williams', sequence: 'Default 5-Step Outreach', leads_enrolled: 187, emails_sent: 561, open_rate: 35.7, reply_rate: 11.4, meetings: 5, status: 'Active', start_date: '2026-03-10' },
+    { id: 5, client: 'David Brown', sequence: 'Default 5-Step Outreach', leads_enrolled: 67, emails_sent: 201, open_rate: 42.1, reply_rate: 15.2, meetings: 3, status: 'Completed', start_date: '2026-02-01' },
+];
+
+// ── Sidebar ──────────────────────────────────────────────────────────────────
+const NAV = [
+    { id: 'icp',       label: 'ICP Builder',      icon: 'Target' },
+    { id: 'sequences', label: 'Email Sequences',   icon: 'Mail' },
+    { id: 'campaigns', label: 'Campaign Manager',  icon: 'Megaphone' },
+    { id: 'scoring',   label: 'Lead Scoring',      icon: 'BarChart2' },
+];
+
+function Sidebar({ page, setPage, open, setOpen }) {
+    return (
+        <>
+            {open && <div className="fixed inset-0 bg-black/60 z-20 md:hidden" onClick={() => setOpen(false)} />}
+            <aside className={`sidebar fixed inset-y-0 left-0 z-30 w-60 flex flex-col ${open ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}
+                style={{ background: '#0D0D0D', borderRight: '1px solid #1A1A1A' }}>
+                <div className="h-14 flex items-center px-5" style={{ borderBottom: '1px solid #1A1A1A' }}>
+                    <a href="admin.html" className="text-base font-bold">
+                        BrokerPipeline<span style={{ color: '#2563EB' }}>.ai</span>
+                    </a>
+                    <span className="ml-2 px-2 py-0.5 rounded text-[10px] font-bold" style={{ background: 'rgba(234,179,8,0.15)', color: '#EAB308', border: '1px solid rgba(234,179,8,0.25)' }}>
+                        LEAD MACHINE
+                    </span>
+                </div>
+                <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
+                    {NAV.map(item => {
+                        const active = page === item.id;
+                        return (
+                            <button key={item.id}
+                                onClick={() => { setPage(item.id); setOpen(false); }}
+                                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-left transition-colors"
+                                style={{ background: active ? 'rgba(37,99,235,0.1)' : 'transparent', color: active ? '#2563EB' : '#9CA3AF' }}
+                                onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; e.currentTarget.style.color = active ? '#2563EB' : '#fff'; }}
+                                onMouseLeave={e => { e.currentTarget.style.background = active ? 'rgba(37,99,235,0.1)' : 'transparent'; e.currentTarget.style.color = active ? '#2563EB' : '#9CA3AF'; }}>
+                                <Icon name={item.icon} size={16} color={active ? '#2563EB' : 'currentColor'} />
+                                {item.label}
+                            </button>
+                        );
+                    })}
+                </nav>
+                <div className="px-4 py-3" style={{ borderTop: '1px solid #1A1A1A' }}>
+                    <a href="admin.html" className="flex items-center gap-2 text-xs text-gray-500 hover:text-white transition-colors">
+                        <Icon name="ArrowLeft" size={14} /> Back to Admin
+                    </a>
+                </div>
+            </aside>
+        </>
+    );
+}
+
+function TopBar({ open, setOpen }) {
+    return (
+        <header className="h-14 flex items-center justify-between px-5 shrink-0" style={{ borderBottom: '1px solid #1A1A1A', background: '#0A0A0A' }}>
+            <div className="flex items-center gap-3">
+                <button onClick={() => setOpen(!open)} className="md:hidden text-gray-400 hover:text-white"><Icon name="Menu" size={20} /></button>
+                <span className="text-sm text-gray-400">Lead Machine</span>
+            </div>
+            <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold" style={{ background: '#EAB308' }}>A</div>
+        </header>
+    );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SECTION 1 — ICP BUILDER
+// ══════════════════════════════════════════════════════════════════════════════
+function ICPPage({ clients }) {
+    const [selectedClient, setSelectedClient] = useState('');
+    const [saved, setSaved] = useState(false);
+    const [form, setForm] = useState({
+        job_titles: [], industries_target: [], industries_exclude: [],
+        company_sizes: [], locations: [],
+        keywords_include: [], keywords_exclude: [],
+        min_years: '', notes: '',
+    });
+
+    const update = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
+
+    const handleSave = async () => {
+        if (!selectedClient) return;
+        if (sb) {
+            await sb.from('icp_profiles').upsert({
+                client_id: selectedClient, ...form,
+                updated_at: new Date().toISOString(),
+            }, { onConflict: 'client_id' });
+        }
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2000);
+    };
+
+    const generatePreview = () => {
+        const parts = [];
+        if (form.job_titles.length) parts.push(`Targeting ${form.job_titles.join(', ').toLowerCase()}`);
+        else parts.push('Targeting prospects');
+        if (form.locations.length && !form.locations.includes('All USA')) parts.push(`in ${form.locations.join(' and ')}`);
+        else if (form.locations.includes('All USA')) parts.push('across the United States');
+        if (form.company_sizes.length) parts.push(`${form.company_sizes.join(', ')} employees`);
+        if (form.industries_target.length) parts.push(`specializing in ${form.industries_target.join(', ').toLowerCase()}`);
+        if (form.industries_exclude.length) parts.push(`excluding ${form.industries_exclude.join(', ').toLowerCase()}`);
+        if (form.keywords_exclude.length) parts.push(`filtering out ${form.keywords_exclude.join(', ')}`);
+        if (form.min_years) parts.push(`with ${form.min_years}+ years in business`);
+        return parts.join(', ') + '.';
+    };
+
+    return (
+        <div className="space-y-6">
+            <div>
+                <h1 className="text-lg font-semibold">ICP Builder</h1>
+                <p className="text-sm text-gray-500 mt-0.5">Define the Ideal Customer Profile for each client</p>
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                {/* Form */}
+                <div className="xl:col-span-2 space-y-5">
+                    <div className="rounded-xl p-5" style={{ background: '#111', border: '1px solid #1A1A1A' }}>
+                        <label className="block text-xs text-gray-400 mb-1.5">Client</label>
+                        <select value={selectedClient} onChange={e => setSelectedClient(e.target.value)}
+                            className="w-full rounded-lg px-4 py-3 text-sm transition-colors"
+                            style={{ ...IS, color: selectedClient ? '#e5e7eb' : '#6B7280' }} onFocus={fb} onBlur={bb}>
+                            <option value="" style={{ background: '#111' }}>Choose a client…</option>
+                            {clients.map(c => <option key={c.id} value={c.id} style={{ background: '#111' }}>{c.name}</option>)}
+                        </select>
+                    </div>
+
+                    <div className="rounded-xl p-5 space-y-5" style={{ background: '#111', border: '1px solid #1A1A1A' }}>
+                        <TagInput label="Job Titles" value={form.job_titles} onChange={v => update('job_titles', v)} placeholder='e.g. "Insurance Broker"' />
+                        <TagInput label="Industries to TARGET" value={form.industries_target} onChange={v => update('industries_target', v)} placeholder='e.g. "Healthcare"' />
+                        <TagInput label="Industries to EXCLUDE" value={form.industries_exclude} onChange={v => update('industries_exclude', v)} placeholder='e.g. "Government"' />
+                        <MultiSelect label="Company Size" options={COMPANY_SIZES} selected={form.company_sizes} onChange={v => update('company_sizes', v)} />
+                        <MultiSelect label="Location" options={US_STATES} selected={form.locations} onChange={v => update('locations', v)} />
+                        <TagInput label="Keywords must include" value={form.keywords_include} onChange={v => update('keywords_include', v)} placeholder='e.g. "independent"' />
+                        <TagInput label="Keywords to exclude" value={form.keywords_exclude} onChange={v => update('keywords_exclude', v)} placeholder='e.g. "State Farm", "captive"' />
+                        <div>
+                            <label className="block text-xs text-gray-400 mb-1.5">Min years in business</label>
+                            <input type="number" min="0" value={form.min_years} onChange={e => update('min_years', e.target.value)}
+                                placeholder="e.g. 5" className="w-32 rounded-lg px-4 py-2.5 text-sm placeholder-gray-600" style={IS} onFocus={fb} onBlur={bb} />
+                        </div>
+                        <div>
+                            <label className="block text-xs text-gray-400 mb-1.5">Notes for AI personalization</label>
+                            <textarea rows={3} value={form.notes} onChange={e => update('notes', e.target.value)}
+                                placeholder="Any context to help the AI personalize outreach…"
+                                className="w-full rounded-lg px-4 py-3 text-sm placeholder-gray-600 resize-none" style={IS} onFocus={fb} onBlur={bb} />
+                        </div>
+                    </div>
+
+                    <button onClick={handleSave} disabled={!selectedClient}
+                        className="px-6 py-3 rounded-xl text-sm font-medium transition-colors"
+                        style={{ background: saved ? 'rgba(34,197,94,0.15)' : (!selectedClient ? '#1A1A1A' : '#2563EB'), color: saved ? '#22C55E' : '#fff', opacity: !selectedClient && !saved ? 0.5 : 1 }}>
+                        {saved ? '✓ Saved' : 'Save ICP Profile'}
+                    </button>
+                </div>
+
+                {/* Preview Card */}
+                <div className="xl:col-span-1">
+                    <div className="rounded-xl p-5 sticky top-6" style={{ background: '#111', border: '1px solid #1A1A1A' }}>
+                        <div className="flex items-center gap-2 mb-4">
+                            <Icon name="Eye" size={16} color="#2563EB" />
+                            <h3 className="text-sm font-medium text-gray-300">ICP Preview</h3>
+                        </div>
+                        <p className="text-sm text-gray-400 leading-relaxed italic">
+                            {(form.job_titles.length || form.locations.length || form.industries_target.length)
+                                ? `"${generatePreview()}"`
+                                : 'Fill in the fields to see a preview of your ICP targeting criteria…'}
+                        </p>
+                        {(form.job_titles.length > 0 || form.keywords_include.length > 0) && (
+                            <div className="mt-4 pt-4" style={{ borderTop: '1px solid #1A1A1A' }}>
+                                <div className="space-y-2 text-xs">
+                                    {form.job_titles.length > 0 && <div><span className="text-gray-500">Titles:</span> <span className="text-gray-300">{form.job_titles.join(', ')}</span></div>}
+                                    {form.company_sizes.length > 0 && <div><span className="text-gray-500">Size:</span> <span className="text-gray-300">{form.company_sizes.join(', ')}</span></div>}
+                                    {form.keywords_include.length > 0 && <div><span className="text-gray-500">Include:</span> <span className="text-green-400">{form.keywords_include.join(', ')}</span></div>}
+                                    {form.keywords_exclude.length > 0 && <div><span className="text-gray-500">Exclude:</span> <span className="text-red-400">{form.keywords_exclude.join(', ')}</span></div>}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SECTION 2 — EMAIL SEQUENCE BUILDER
+// ══════════════════════════════════════════════════════════════════════════════
+function SequencesPage({ clients }) {
+    const [seqName, setSeqName] = useState('Default 5-Step Outreach');
+    const [seqClient, setSeqClient] = useState('');
+    const [seqStatus, setSeqStatus] = useState('Draft');
+    const [steps, setSteps] = useState(DEFAULT_SEQUENCE.map((s, i) => ({ ...s, id: i + 1 })));
+    const [editingStep, setEditingStep] = useState(null);
+    const [saved, setSaved] = useState(false);
+    const [dragIdx, setDragIdx] = useState(null);
+
+    const updateStep = (id, field, value) => {
+        setSteps(prev => prev.map(s => s.id === id ? { ...s, [field]: value } : s));
+    };
+
+    const addStep = () => {
+        const maxDay = Math.max(...steps.map(s => s.day), 0);
+        setSteps(prev => [...prev, { id: Date.now(), day: maxDay + 7, subject: '', body: '' }]);
+    };
+
+    const removeStep = (id) => {
+        if (steps.length > 1) setSteps(prev => prev.filter(s => s.id !== id));
+    };
+
+    const moveStep = (fromIdx, toIdx) => {
+        if (fromIdx === toIdx) return;
+        const updated = [...steps];
+        const [moved] = updated.splice(fromIdx, 1);
+        updated.splice(toIdx, 0, moved);
+        setSteps(updated);
+    };
+
+    const handleSave = async () => {
+        if (sb && seqClient) {
+            await sb.from('email_sequences').upsert({
+                client_id: seqClient, name: seqName, status: seqStatus,
+                steps: steps.map((s, i) => ({ step: i + 1, day: s.day, subject: s.subject, body: s.body })),
+                updated_at: new Date().toISOString(),
+            }, { onConflict: 'client_id' });
+        }
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2000);
+    };
+
+    const insertVariable = (stepId, variable) => {
+        const step = steps.find(s => s.id === stepId);
+        if (step) updateStep(stepId, 'body', step.body + variable);
+    };
+
+    return (
+        <div className="space-y-6">
+            <div>
+                <h1 className="text-lg font-semibold">Email Sequence Builder</h1>
+                <p className="text-sm text-gray-500 mt-0.5">Build and manage multi-step outreach sequences</p>
+            </div>
+
+            {/* Sequence meta */}
+            <div className="rounded-xl p-5 space-y-4" style={{ background: '#111', border: '1px solid #1A1A1A' }}>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                        <label className="block text-xs text-gray-400 mb-1.5">Sequence Name</label>
+                        <input value={seqName} onChange={e => setSeqName(e.target.value)}
+                            className="w-full rounded-lg px-4 py-2.5 text-sm" style={IS} onFocus={fb} onBlur={bb} />
+                    </div>
+                    <div>
+                        <label className="block text-xs text-gray-400 mb-1.5">Client</label>
+                        <select value={seqClient} onChange={e => setSeqClient(e.target.value)}
+                            className="w-full rounded-lg px-4 py-2.5 text-sm" style={{ ...IS, color: seqClient ? '#e5e7eb' : '#6B7280' }} onFocus={fb} onBlur={bb}>
+                            <option value="" style={{ background: '#111' }}>Select…</option>
+                            {clients.map(c => <option key={c.id} value={c.id} style={{ background: '#111' }}>{c.name}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-xs text-gray-400 mb-1.5">Status</label>
+                        <div className="flex gap-2">
+                            {['Draft','Active','Paused'].map(s => (
+                                <button key={s} onClick={() => setSeqStatus(s)}
+                                    className="flex-1 py-2 rounded-lg text-xs font-medium transition-all"
+                                    style={{ background: seqStatus === s ? 'rgba(37,99,235,0.12)' : '#0A0A0A', border: `1px solid ${seqStatus === s ? '#2563EB' : '#1A1A1A'}`, color: seqStatus === s ? '#60A5FA' : '#9CA3AF' }}>
+                                    {s}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Steps */}
+            <div className="space-y-3">
+                {steps.map((step, idx) => (
+                    <div key={step.id}
+                        draggable
+                        onDragStart={() => setDragIdx(idx)}
+                        onDragOver={e => { e.preventDefault(); e.currentTarget.classList.add('drag-over'); }}
+                        onDragLeave={e => e.currentTarget.classList.remove('drag-over')}
+                        onDrop={e => { e.currentTarget.classList.remove('drag-over'); moveStep(dragIdx, idx); setDragIdx(null); }}
+                        className="rounded-xl p-5 transition-colors"
+                        style={{ background: '#111', border: '1px solid #1A1A1A', cursor: 'grab' }}>
+                        {/* Step header */}
+                        <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-3">
+                                <div className="flex items-center gap-1.5 text-gray-500">
+                                    <Icon name="GripVertical" size={14} />
+                                </div>
+                                <span className="text-xs font-bold px-2 py-0.5 rounded" style={{ background: 'rgba(37,99,235,0.1)', color: '#60A5FA' }}>
+                                    Step {idx + 1}
+                                </span>
+                                <div className="flex items-center gap-2">
+                                    <label className="text-xs text-gray-500">Day</label>
+                                    <input type="number" min="1" value={step.day} onChange={e => updateStep(step.id, 'day', parseInt(e.target.value) || 1)}
+                                        className="w-16 rounded-lg px-2 py-1.5 text-xs text-center" style={IS} />
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button onClick={() => setEditingStep(editingStep === step.id ? null : step.id)}
+                                    className="text-xs text-blue-400 hover:text-blue-300 transition-colors">
+                                    {editingStep === step.id ? 'Collapse' : 'Edit'}
+                                </button>
+                                {steps.length > 1 && (
+                                    <button onClick={() => removeStep(step.id)} className="text-xs text-red-400 hover:text-red-300 transition-colors">Remove</button>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Subject */}
+                        <div className="mb-3">
+                            <label className="block text-xs text-gray-500 mb-1">Subject</label>
+                            <input value={step.subject} onChange={e => updateStep(step.id, 'subject', e.target.value)}
+                                placeholder="Email subject line…"
+                                className="w-full rounded-lg px-3 py-2 text-sm placeholder-gray-600" style={IS} onFocus={fb} onBlur={bb} />
+                        </div>
+
+                        {/* Body (expanded) */}
+                        {editingStep === step.id && (
+                            <div>
+                                <label className="block text-xs text-gray-500 mb-1">Body</label>
+                                {/* Variable chips */}
+                                <div className="flex flex-wrap gap-1.5 mb-2">
+                                    {VARIABLES.map(v => (
+                                        <button key={v} onClick={() => insertVariable(step.id, v)}
+                                            className="px-2 py-0.5 rounded text-[10px] font-mono transition-colors"
+                                            style={{ background: 'rgba(37,99,235,0.08)', color: '#60A5FA', border: '1px solid rgba(37,99,235,0.2)' }}>
+                                            {v}
+                                        </button>
+                                    ))}
+                                </div>
+                                <textarea rows={8} value={step.body} onChange={e => updateStep(step.id, 'body', e.target.value)}
+                                    className="w-full rounded-lg px-3 py-2.5 text-sm placeholder-gray-600 resize-none font-mono leading-relaxed"
+                                    style={IS} onFocus={fb} onBlur={bb} />
+                            </div>
+                        )}
+
+                        {/* Body preview (collapsed) */}
+                        {editingStep !== step.id && step.body && (
+                            <p className="text-xs text-gray-500 truncate">{step.body.split('\n')[0]}</p>
+                        )}
+                    </div>
+                ))}
+            </div>
+
+            <div className="flex items-center gap-3">
+                <button onClick={addStep} className="flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300 transition-colors">
+                    <Icon name="Plus" size={16} color="#60A5FA" /> Add Step
+                </button>
+                <div className="flex-1" />
+                <button onClick={handleSave}
+                    className="px-6 py-3 rounded-xl text-sm font-medium transition-colors"
+                    style={{ background: saved ? 'rgba(34,197,94,0.15)' : '#2563EB', color: saved ? '#22C55E' : '#fff' }}>
+                    {saved ? '✓ Saved' : 'Save Sequence'}
+                </button>
+            </div>
+        </div>
+    );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SECTION 3 — CAMPAIGN MANAGER
+// ══════════════════════════════════════════════════════════════════════════════
+function CampaignsPage({ clients }) {
+    const [campaigns, setCampaigns] = useState(MOCK_CAMPAIGNS);
+    const [showModal, setShowModal] = useState(false);
+    const [newCamp, setNewCamp] = useState({ client: '', sequence: 'Default 5-Step Outreach', daily_limit: 20, start_date: '2026-05-12' });
+
+    const totalLeads   = campaigns.reduce((s, c) => s + c.leads_enrolled, 0);
+    const totalEmails  = campaigns.reduce((s, c) => s + c.emails_sent, 0);
+    const totalMeetings= campaigns.reduce((s, c) => s + c.meetings, 0);
+
+    const createCampaign = () => {
+        if (!newCamp.client) return;
+        const clientName = clients.find(c => c.id === newCamp.client)?.name || 'Unknown';
+        setCampaigns(prev => [...prev, {
+            id: Date.now(), client: clientName, sequence: newCamp.sequence,
+            leads_enrolled: 0, emails_sent: 0, open_rate: 0, reply_rate: 0, meetings: 0,
+            status: 'Active', start_date: newCamp.start_date,
+        }]);
+        setShowModal(false);
+        setNewCamp({ client: '', sequence: 'Default 5-Step Outreach', daily_limit: 20, start_date: '2026-05-12' });
+    };
+
+    return (
+        <div className="space-y-6">
+            <div className="flex items-center justify-between">
+                <div>
+                    <h1 className="text-lg font-semibold">Campaign Manager</h1>
+                    <p className="text-sm text-gray-500 mt-0.5">{campaigns.length} campaigns</p>
+                </div>
+                <button onClick={() => setShowModal(true)}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-white transition-colors"
+                    style={{ background: '#2563EB' }}>
+                    <Icon name="Plus" size={16} color="#fff" /> New Campaign
+                </button>
+            </div>
+
+            {/* Summary */}
+            <div className="grid grid-cols-3 gap-4">
+                {[
+                    { label: 'Total Leads Enrolled', value: totalLeads.toLocaleString(), icon: 'Users', color: '#2563EB', bg: 'rgba(37,99,235,0.12)' },
+                    { label: 'Total Emails Sent', value: totalEmails.toLocaleString(), icon: 'Mail', color: '#9CA3AF', bg: 'rgba(156,163,175,0.12)' },
+                    { label: 'Total Meetings Booked', value: totalMeetings, icon: 'CalendarCheck', color: '#22C55E', bg: 'rgba(34,197,94,0.12)' },
+                ].map((c, i) => (
+                    <div key={i} className="rounded-xl p-5" style={{ background: '#111', border: '1px solid #1A1A1A' }}>
+                        <div className="flex items-center justify-between mb-3">
+                            <span className="text-xs text-gray-500">{c.label}</span>
+                            <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: c.bg }}><Icon name={c.icon} size={16} color={c.color} /></div>
+                        </div>
+                        <div className="text-2xl font-bold">{c.value}</div>
+                    </div>
+                ))}
+            </div>
+
+            {/* Table */}
+            <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #1A1A1A' }}>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                        <thead>
+                            <tr style={{ borderBottom: '1px solid #1A1A1A', background: '#0D0D0D' }}>
+                                {['Client','Sequence','Leads','Emails Sent','Open Rate','Reply Rate','Meetings','Status','Start Date'].map(h => (
+                                    <th key={h} className="px-4 py-3 text-left text-xs font-medium whitespace-nowrap" style={{ color: '#555', letterSpacing: '0.05em' }}>{h}</th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {campaigns.map((c, i) => (
+                                <tr key={c.id} className="tbl-row transition-colors"
+                                    style={{ borderBottom: i < campaigns.length - 1 ? '1px solid #141414' : 'none', background: '#111' }}>
+                                    <td className="px-4 py-3 font-medium whitespace-nowrap">{c.client}</td>
+                                    <td className="px-4 py-3 whitespace-nowrap" style={{ color: '#9CA3AF' }}>{c.sequence}</td>
+                                    <td className="px-4 py-3 whitespace-nowrap" style={{ color: '#9CA3AF' }}>{c.leads_enrolled}</td>
+                                    <td className="px-4 py-3 whitespace-nowrap" style={{ color: '#9CA3AF' }}>{c.emails_sent}</td>
+                                    <td className="px-4 py-3 whitespace-nowrap" style={{ color: c.open_rate > 35 ? '#22C55E' : '#EAB308' }}>{c.open_rate}%</td>
+                                    <td className="px-4 py-3 whitespace-nowrap" style={{ color: c.reply_rate > 12 ? '#22C55E' : '#EAB308' }}>{c.reply_rate}%</td>
+                                    <td className="px-4 py-3 whitespace-nowrap font-semibold" style={{ color: '#22C55E' }}>{c.meetings}</td>
+                                    <td className="px-4 py-3 whitespace-nowrap"><Badge status={c.status} /></td>
+                                    <td className="px-4 py-3 whitespace-nowrap" style={{ color: '#9CA3AF' }}>{c.start_date}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            {/* Modal */}
+            {showModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={() => setShowModal(false)}>
+                    <div className="rounded-2xl p-6 w-full max-w-md space-y-4" style={{ background: '#111', border: '1px solid #1A1A1A' }}
+                        onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between">
+                            <h2 className="text-base font-semibold">New Campaign</h2>
+                            <button onClick={() => setShowModal(false)} className="text-gray-500 hover:text-white"><Icon name="X" size={18} /></button>
+                        </div>
+                        <div>
+                            <label className="block text-xs text-gray-400 mb-1.5">Client</label>
+                            <select value={newCamp.client} onChange={e => setNewCamp(p => ({ ...p, client: e.target.value }))}
+                                className="w-full rounded-lg px-4 py-2.5 text-sm" style={{ ...IS, color: newCamp.client ? '#e5e7eb' : '#6B7280' }} onFocus={fb} onBlur={bb}>
+                                <option value="" style={{ background: '#111' }}>Select…</option>
+                                {clients.map(c => <option key={c.id} value={c.id} style={{ background: '#111' }}>{c.name}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-xs text-gray-400 mb-1.5">Sequence</label>
+                            <input value={newCamp.sequence} onChange={e => setNewCamp(p => ({ ...p, sequence: e.target.value }))}
+                                className="w-full rounded-lg px-4 py-2.5 text-sm" style={IS} onFocus={fb} onBlur={bb} />
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-xs text-gray-400 mb-1.5">Daily Send Limit</label>
+                                <input type="number" min="1" max="30" value={newCamp.daily_limit}
+                                    onChange={e => setNewCamp(p => ({ ...p, daily_limit: Math.min(30, parseInt(e.target.value) || 1) }))}
+                                    className="w-full rounded-lg px-4 py-2.5 text-sm" style={IS} onFocus={fb} onBlur={bb} />
+                                <p className="text-[10px] text-gray-600 mt-1">Max 30/day</p>
+                            </div>
+                            <div>
+                                <label className="block text-xs text-gray-400 mb-1.5">Start Date</label>
+                                <input type="date" value={newCamp.start_date} onChange={e => setNewCamp(p => ({ ...p, start_date: e.target.value }))}
+                                    className="w-full rounded-lg px-4 py-2.5 text-sm" style={IS} onFocus={fb} onBlur={bb} />
+                            </div>
+                        </div>
+                        <button onClick={createCampaign} disabled={!newCamp.client}
+                            className="w-full py-3 rounded-xl text-sm font-medium text-white transition-colors"
+                            style={{ background: newCamp.client ? '#2563EB' : '#1A1A1A', opacity: newCamp.client ? 1 : 0.5 }}>
+                            Create Campaign
+                        </button>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SECTION 4 — LEAD SCORING CONFIG
+// ══════════════════════════════════════════════════════════════════════════════
+function ScoringPage() {
+    const [rules, setRules] = useState(DEFAULT_SCORING_RULES);
+    const [threshold, setThreshold] = useState(6);
+    const [saved, setSaved] = useState(false);
+    const [editing, setEditing] = useState(null);
+
+    const FIELDS = ['title','company_size','industry','years_in_business','phone','linkedin_url','email','location'];
+    const CONDITIONS = ['contains','equals','greater_than','less_than','exists','not_contains'];
+
+    const addRule = () => {
+        setRules(prev => [...prev, { id: Date.now(), field: 'title', condition: 'contains', value: '', points: 1 }]);
+        setEditing(Date.now());
+    };
+
+    const updateRule = (id, field, value) => {
+        setRules(prev => prev.map(r => r.id === id ? { ...r, [field]: value } : r));
+    };
+
+    const removeRule = (id) => {
+        setRules(prev => prev.filter(r => r.id !== id));
+    };
+
+    const handleSave = async () => {
+        if (sb) {
+            await sb.from('scoring_rules').upsert({
+                id: 'global', rules, threshold,
+                updated_at: new Date().toISOString(),
+            }, { onConflict: 'id' });
+        }
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2000);
+    };
+
+    const maxScore = rules.reduce((s, r) => s + (r.points > 0 ? r.points : 0), 0);
+
+    return (
+        <div className="space-y-6 max-w-3xl">
+            <div>
+                <h1 className="text-lg font-semibold">Lead Scoring Config</h1>
+                <p className="text-sm text-gray-500 mt-0.5">Define scoring rules to prioritize leads</p>
+            </div>
+
+            {/* Threshold */}
+            <div className="rounded-xl p-5 flex items-center justify-between" style={{ background: '#111', border: '1px solid #1A1A1A' }}>
+                <div>
+                    <h3 className="text-sm font-medium text-gray-300">Score threshold for outreach</h3>
+                    <p className="text-xs text-gray-500 mt-0.5">Leads scoring below this won't be contacted. Max possible: {maxScore}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                    <input type="number" min="0" max="20" value={threshold} onChange={e => setThreshold(parseInt(e.target.value) || 0)}
+                        className="w-16 rounded-lg px-3 py-2.5 text-sm text-center font-bold" style={IS} onFocus={fb} onBlur={bb} />
+                    <span className="text-sm text-gray-500">/ 10</span>
+                </div>
+            </div>
+
+            {/* Rules */}
+            <div className="space-y-2">
+                {rules.map(rule => (
+                    <div key={rule.id} className="rounded-xl p-4 transition-colors" style={{ background: '#111', border: '1px solid #1A1A1A' }}>
+                        {editing === rule.id ? (
+                            <div className="space-y-3">
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                    <div>
+                                        <label className="block text-[10px] text-gray-500 mb-1">Field</label>
+                                        <select value={rule.field} onChange={e => updateRule(rule.id, 'field', e.target.value)}
+                                            className="w-full rounded-lg px-3 py-2 text-xs" style={IS} onFocus={fb} onBlur={bb}>
+                                            {FIELDS.map(f => <option key={f} value={f} style={{ background: '#111' }}>{f}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] text-gray-500 mb-1">Condition</label>
+                                        <select value={rule.condition} onChange={e => updateRule(rule.id, 'condition', e.target.value)}
+                                            className="w-full rounded-lg px-3 py-2 text-xs" style={IS} onFocus={fb} onBlur={bb}>
+                                            {CONDITIONS.map(c => <option key={c} value={c} style={{ background: '#111' }}>{c.replace(/_/g, ' ')}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] text-gray-500 mb-1">Value</label>
+                                        <input value={rule.value} onChange={e => updateRule(rule.id, 'value', e.target.value)}
+                                            placeholder={rule.condition === 'exists' ? '(any)' : 'Value…'}
+                                            disabled={rule.condition === 'exists'}
+                                            className="w-full rounded-lg px-3 py-2 text-xs" style={IS} onFocus={fb} onBlur={bb} />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] text-gray-500 mb-1">Points</label>
+                                        <input type="number" value={rule.points} onChange={e => updateRule(rule.id, 'points', parseInt(e.target.value) || 0)}
+                                            className="w-full rounded-lg px-3 py-2 text-xs text-center font-bold" style={IS} onFocus={fb} onBlur={bb} />
+                                    </div>
+                                </div>
+                                <div className="flex justify-end gap-2">
+                                    <button onClick={() => removeRule(rule.id)} className="text-xs text-red-400 hover:text-red-300">Delete</button>
+                                    <button onClick={() => setEditing(null)} className="text-xs text-blue-400 hover:text-blue-300">Done</button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="flex items-center justify-between cursor-pointer" onClick={() => setEditing(rule.id)}>
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-8 rounded-lg flex items-center justify-center text-xs font-bold"
+                                        style={{
+                                            background: rule.points > 0 ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)',
+                                            color: rule.points > 0 ? '#22C55E' : '#EF4444',
+                                            border: `1px solid ${rule.points > 0 ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}`,
+                                        }}>
+                                        {rule.points > 0 ? '+' : ''}{rule.points}
+                                    </div>
+                                    <div>
+                                        <span className="text-sm text-gray-300">
+                                            <span className="text-gray-500">{rule.field.replace(/_/g, ' ')}</span>
+                                            {' '}{rule.condition.replace(/_/g, ' ')}{' '}
+                                            {rule.value && <span className="font-medium text-white">"{rule.value}"</span>}
+                                        </span>
+                                    </div>
+                                </div>
+                                <Icon name="ChevronRight" size={14} color="#555" />
+                            </div>
+                        )}
+                    </div>
+                ))}
+            </div>
+
+            <div className="flex items-center gap-3">
+                <button onClick={addRule} className="flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300 transition-colors">
+                    <Icon name="Plus" size={16} color="#60A5FA" /> Add Rule
+                </button>
+                <div className="flex-1" />
+                <button onClick={handleSave}
+                    className="px-6 py-3 rounded-xl text-sm font-medium transition-colors"
+                    style={{ background: saved ? 'rgba(34,197,94,0.15)' : '#2563EB', color: saved ? '#22C55E' : '#fff' }}>
+                    {saved ? '✓ Saved' : 'Save Scoring Rules'}
+                </button>
+            </div>
+        </div>
+    );
+}
+
+// ── Root App ─────────────────────────────────────────────────────────────────
+function App() {
+    const [page, setPage]     = useState('icp');
+    const [sbOpen, setSbOpen] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [clients, setClients] = useState([]);
+
+    useEffect(() => {
+        (async () => {
+            try {
+                if (sb) {
+                    const { data: { session } } = await sb.auth.getSession();
+                    if (!session || session.user.email !== ADMIN_EMAIL) {
+                        setClients(MOCK_CLIENTS);
+                        setLoading(false);
+                        return;
+                    }
+                    const { data: onboarding } = await sb.from('client_onboarding').select('user_id, full_name, email');
+                    if (onboarding?.length) {
+                        setClients(onboarding.map(o => ({ id: o.user_id, name: o.full_name || 'Unknown', email: o.email || '' })));
+                    } else {
+                        setClients(MOCK_CLIENTS);
+                    }
+                } else {
+                    setClients(MOCK_CLIENTS);
+                }
+            } catch (err) {
+                setClients(MOCK_CLIENTS);
+            }
+            setLoading(false);
+        })();
+    }, []);
+
+    if (loading) {
+        return (
+            <div className="h-screen flex items-center justify-center" style={{ background: '#0A0A0A' }}>
+                <div className="flex items-center gap-3 text-gray-400 text-sm">
+                    <div className="w-4 h-4 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: '#2563EB', borderTopColor: 'transparent' }} />
+                    Loading…
+                </div>
+            </div>
+        );
+    }
+
+    const PAGES = {
+        icp:       <ICPPage clients={clients} />,
+        sequences: <SequencesPage clients={clients} />,
+        campaigns: <CampaignsPage clients={clients} />,
+        scoring:   <ScoringPage />,
+    };
+
+    return (
+        <div className="h-screen flex overflow-hidden" style={{ background: '#0A0A0A' }}>
+            <Sidebar page={page} setPage={setPage} open={sbOpen} setOpen={setSbOpen} />
+            <div className="flex-1 flex flex-col md:ml-60 overflow-hidden">
+                <TopBar open={sbOpen} setOpen={setSbOpen} />
+                <main className="flex-1 overflow-y-auto p-5 md:p-6">{PAGES[page]}</main>
+            </div>
+        </div>
+    );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

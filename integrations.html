@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Integrations — BrokerPipeline.ai</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        html,body,#root{height:100%}
+        body{background:#0A0A0A;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
+        ::-webkit-scrollbar{width:5px;height:5px}
+        ::-webkit-scrollbar-track{background:transparent}
+        ::-webkit-scrollbar-thumb{background:#2A2A2A;border-radius:99px}
+        .sidebar{transition:transform .25s cubic-bezier(.4,0,.2,1)}
+        input:focus,textarea:focus,select:focus{outline:none}
+        .tbl-row:hover{background:rgba(255,255,255,0.025)}
+        pre{white-space:pre-wrap;word-break:break-all}
+        code{font-family:'SF Mono',Monaco,Consolas,monospace}
+    </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+const SUPABASE_URL      = 'https://glokxezbcrelrndcbhhs.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdsb2t4ZXpiY3JlbHJuZGNiaGhzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5NzMxNzEsImV4cCI6MjA5MzU0OTE3MX0.imnH5pmrXpiKz18fzxyF78b23luNNmu5izM3yBSlbQ4';
+const ADMIN_EMAIL = 'admin@brokerpipeline.ai';
+const BASE_URL = SUPABASE_URL + '/functions/v1';
+
+let sb = null;
+try { if (typeof supabase !== 'undefined' && supabase.createClient) sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); } catch(e) {}
+
+function Icon({ name, size = 18, color = 'currentColor', className = '' }) {
+    const ref = useRef(null);
+    useEffect(() => {
+        if (!ref.current || !lucide?.icons?.[name]) return;
+        ref.current.innerHTML = '';
+        const svg = lucide.createElement(lucide.icons[name]);
+        svg.setAttribute('width', size);
+        svg.setAttribute('height', size);
+        svg.setAttribute('stroke', color);
+        svg.style.display = 'block';
+        svg.style.flexShrink = '0';
+        ref.current.appendChild(svg);
+    }, [name, size, color]);
+    return <span ref={ref} className={`inline-flex items-center ${className}`} />;
+}
+
+const IS = { background: '#0A0A0A', border: '1px solid #1A1A1A', color: '#e5e7eb' };
+const fb = e => e.target.style.borderColor = '#2563EB';
+const bb = e => e.target.style.borderColor = '#1A1A1A';
+
+const BADGE_MAP = {
+    Connected:      'bg-green-500/15 text-green-400 border-green-500/25',
+    Disconnected:   'bg-red-500/15 text-red-400 border-red-500/25',
+    'Not configured':'bg-gray-500/15 text-gray-400 border-gray-500/25',
+    Operational:    'bg-green-500/15 text-green-400 border-green-500/25',
+    Degraded:       'bg-yellow-500/15 text-yellow-400 border-yellow-500/25',
+    Down:           'bg-red-500/15 text-red-400 border-red-500/25',
+    POST:           'bg-blue-500/15 text-blue-400 border-blue-500/25',
+};
+function Badge({ status }) {
+    return <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium border ${BADGE_MAP[status] || 'bg-gray-500/15 text-gray-400 border-gray-500/25'}`}>{status}</span>;
+}
+
+function useCopy() {
+    const [copied, setCopied] = useState('');
+    const copy = useCallback((text, id) => {
+        navigator.clipboard?.writeText(text);
+        setCopied(id);
+        setTimeout(() => setCopied(''), 2000);
+    }, []);
+    return [copied, copy];
+}
+
+// ── Sidebar ──────────────────────────────────────────────────────────────────
+const NAV = [
+    { id: 'hub',      label: 'Integration Hub',  icon: 'Plug' },
+    { id: 'webhooks', label: 'Webhook Center',    icon: 'Webhook' },
+    { id: 'guide',    label: 'Make.com Guide',    icon: 'BookOpen' },
+    { id: 'keys',     label: 'API Keys',          icon: 'Key' },
+    { id: 'health',   label: 'System Health',     icon: 'Activity' },
+];
+
+function Sidebar({ page, setPage, open, setOpen }) {
+    return (
+        <>
+            {open && <div className="fixed inset-0 bg-black/60 z-20 md:hidden" onClick={() => setOpen(false)} />}
+            <aside className={`sidebar fixed inset-y-0 left-0 z-30 w-60 flex flex-col ${open ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}
+                style={{ background: '#0D0D0D', borderRight: '1px solid #1A1A1A' }}>
+                <div className="h-14 flex items-center px-5" style={{ borderBottom: '1px solid #1A1A1A' }}>
+                    <a href="index.html" className="text-base font-bold">
+                        BrokerPipeline<span style={{ color: '#2563EB' }}>.ai</span>
+                    </a>
+                    <span className="ml-2 px-2 py-0.5 rounded text-[10px] font-bold" style={{ background: 'rgba(37,99,235,0.15)', color: '#60A5FA', border: '1px solid rgba(37,99,235,0.25)' }}>
+                        INTEGRATIONS
+                    </span>
+                </div>
+                <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
+                    {NAV.map(item => {
+                        const active = page === item.id;
+                        return (
+                            <button key={item.id}
+                                onClick={() => { setPage(item.id); setOpen(false); }}
+                                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-left transition-colors"
+                                style={{ background: active ? 'rgba(37,99,235,0.1)' : 'transparent', color: active ? '#2563EB' : '#9CA3AF' }}
+                                onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; e.currentTarget.style.color = active ? '#2563EB' : '#fff'; }}
+                                onMouseLeave={e => { e.currentTarget.style.background = active ? 'rgba(37,99,235,0.1)' : 'transparent'; e.currentTarget.style.color = active ? '#2563EB' : '#9CA3AF'; }}>
+                                <Icon name={item.icon} size={16} color={active ? '#2563EB' : 'currentColor'} />
+                                {item.label}
+                            </button>
+                        );
+                    })}
+                </nav>
+                <div className="px-4 py-3" style={{ borderTop: '1px solid #1A1A1A' }}>
+                    <button onClick={() => { window.location.href = 'admin.html'; }}
+                        className="flex items-center gap-2 text-xs text-gray-500 hover:text-white transition-colors">
+                        <Icon name="ArrowLeft" size={14} /> Back to Admin
+                    </button>
+                </div>
+            </aside>
+        </>
+    );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// SECTION 1 — Integration Hub
+// ════════════════════════════════════════════════════════════════════════════
+
+const TOOLS = [
+    { id: 'apollo', name: 'Apollo.io', desc: 'Lead prospecting and data enrichment', icon: 'Search', color: '#6366F1', status: 'Connected', lastSync: '2026-05-05T14:32:00Z' },
+    { id: 'clay', name: 'Clay', desc: 'Data enrichment and waterfall scoring', icon: 'Layers', color: '#F97316', status: 'Connected', lastSync: '2026-05-05T14:30:00Z' },
+    { id: 'instantly', name: 'Instantly', desc: 'Email outreach and campaign automation', icon: 'Mail', color: '#2563EB', status: 'Connected', lastSync: '2026-05-05T13:15:00Z' },
+    { id: 'retell', name: 'Retell AI', desc: 'AI voice agent for outbound calls', icon: 'Phone', color: '#8B5CF6', status: 'Connected', lastSync: '2026-05-05T12:45:00Z' },
+    { id: 'twilio', name: 'Twilio', desc: 'Phone numbers and SMS infrastructure', icon: 'Smartphone', color: '#EF4444', status: 'Connected', lastSync: '2026-05-05T10:00:00Z' },
+    { id: 'calendly', name: 'Calendly', desc: 'Appointment scheduling and booking', icon: 'Calendar', color: '#22C55E', status: 'Disconnected', lastSync: null },
+    { id: 'make', name: 'Make.com', desc: 'Workflow automation and orchestration', icon: 'GitBranch', color: '#06B6D4', status: 'Connected', lastSync: '2026-05-05T14:35:00Z' },
+];
+
+function IntegrationHubPage() {
+    const [tools, setTools] = useState(TOOLS);
+
+    const toggle = (id) => {
+        setTools(ts => ts.map(t => t.id === id ? {
+            ...t,
+            status: t.status === 'Connected' ? 'Disconnected' : 'Connected',
+            lastSync: t.status === 'Connected' ? null : new Date().toISOString(),
+        } : t));
+    };
+
+    const connected = tools.filter(t => t.status === 'Connected').length;
+
+    return (
+        <div>
+            <div className="flex items-center justify-between mb-6">
+                <div>
+                    <h1 className="text-2xl font-bold">Integration Hub</h1>
+                    <p className="text-sm text-gray-500 mt-1">{connected} of {tools.length} tools connected</p>
+                </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {tools.map(t => (
+                    <div key={t.id} className="rounded-xl p-5" style={{ background: '#111', border: '1px solid #1F1F1F' }}>
+                        <div className="flex items-start justify-between mb-4">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl flex items-center justify-center"
+                                    style={{ background: `${t.color}15`, border: `1px solid ${t.color}30` }}>
+                                    <Icon name={t.icon} size={18} color={t.color} />
+                                </div>
+                                <div>
+                                    <div className="font-semibold text-sm">{t.name}</div>
+                                    <div className="text-[10px] text-gray-500 mt-0.5">{t.desc}</div>
+                                </div>
+                            </div>
+                            <button className="text-gray-600 hover:text-gray-300 transition-colors p-1">
+                                <Icon name="Settings" size={14} />
+                            </button>
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <Badge status={t.status} />
+                                {t.lastSync && (
+                                    <div className="text-[10px] text-gray-600 mt-1.5">
+                                        Last sync: {new Date(t.lastSync).toLocaleString()}
+                                    </div>
+                                )}
+                            </div>
+                            <button onClick={() => toggle(t.id)}
+                                className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                                style={{
+                                    background: t.status === 'Connected' ? 'rgba(239,68,68,0.1)' : 'rgba(34,197,94,0.1)',
+                                    color: t.status === 'Connected' ? '#EF4444' : '#22C55E',
+                                    border: `1px solid ${t.status === 'Connected' ? 'rgba(239,68,68,0.25)' : 'rgba(34,197,94,0.25)'}`,
+                                }}>
+                                {t.status === 'Connected' ? 'Disconnect' : 'Connect'}
+                            </button>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// SECTION 2 — Webhook Center
+// ════════════════════════════════════════════════════════════════════════════
+
+const WEBHOOKS = [
+    { id: 'w1', name: 'New Lead Received', endpoint: 'api-leads', desc: 'Paste this in Make.com when Clay finishes enriching a lead', lastCalled: '2026-05-05T14:32:00Z', totalCalls: 1247 },
+    { id: 'w2', name: 'Lead Status Updated', endpoint: 'api-leads-update', desc: 'Paste this in Make.com when Instantly detects a reply or open', lastCalled: '2026-05-05T13:15:00Z', totalCalls: 832 },
+    { id: 'w3', name: 'Appointment Booked', endpoint: 'api-appointments', desc: 'Paste this in Make.com when Calendly confirms a new booking', lastCalled: '2026-05-05T11:45:00Z', totalCalls: 156 },
+    { id: 'w4', name: 'Call Completed', endpoint: 'api-reports', desc: 'Paste this in Retell AI post-call webhook settings', lastCalled: '2026-05-05T12:20:00Z', totalCalls: 423 },
+];
+
+function WebhookCenterPage() {
+    const [copied, copy] = useCopy();
+    const [testing, setTesting] = useState('');
+    const [testResults, setTestResults] = useState({});
+    const apiKey = 'bp_live_a1b2c3d4e5f6g7h8i9j0k1l2';
+
+    const testWebhook = (id) => {
+        setTesting(id);
+        setTimeout(() => {
+            setTesting('');
+            setTestResults(prev => ({ ...prev, [id]: { ok: true, time: new Date().toISOString() } }));
+        }, 1500);
+    };
+
+    return (
+        <div>
+            <div className="mb-6">
+                <h1 className="text-2xl font-bold">Webhook Center</h1>
+                <p className="text-sm text-gray-500 mt-1">Copy these URLs into your Make.com scenarios</p>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+                {WEBHOOKS.map(w => {
+                    const url = `${BASE_URL}/${w.endpoint}`;
+                    return (
+                        <div key={w.id} className="rounded-xl p-5" style={{ background: '#111', border: '1px solid #1F1F1F' }}>
+                            <div className="flex items-start justify-between mb-3">
+                                <div>
+                                    <h3 className="font-semibold text-sm">{w.name}</h3>
+                                    <p className="text-[10px] text-gray-500 mt-0.5">{w.desc}</p>
+                                </div>
+                                <Badge status="POST" />
+                            </div>
+
+                            <div className="flex items-center gap-2 mb-3 p-2.5 rounded-lg" style={{ background: '#0A0A0A', border: '1px solid #1A1A1A' }}>
+                                <code className="text-xs text-blue-400 flex-1 truncate">{url}</code>
+                                <button onClick={() => copy(url, w.id)}
+                                    className="flex-shrink-0 text-gray-500 hover:text-white transition-colors">
+                                    <Icon name={copied === w.id ? 'Check' : 'Copy'} size={14} color={copied === w.id ? '#22C55E' : undefined} />
+                                </button>
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                                <div className="flex gap-4 text-[10px] text-gray-500">
+                                    <span>Last called: <span className="text-gray-400">{new Date(w.lastCalled).toLocaleString()}</span></span>
+                                    <span>Total: <span className="text-blue-400 font-medium">{w.totalCalls.toLocaleString()}</span></span>
+                                </div>
+                                <button onClick={() => testWebhook(w.id)}
+                                    disabled={testing === w.id}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                                    style={{
+                                        background: testResults[w.id] ? 'rgba(34,197,94,0.1)' : 'rgba(37,99,235,0.1)',
+                                        color: testResults[w.id] ? '#22C55E' : '#2563EB',
+                                        border: `1px solid ${testResults[w.id] ? 'rgba(34,197,94,0.25)' : 'rgba(37,99,235,0.25)'}`,
+                                        opacity: testing === w.id ? 0.5 : 1,
+                                    }}>
+                                    {testing === w.id ? (
+                                        <><div className="w-3 h-3 border border-blue-400 border-t-transparent rounded-full animate-spin" /> Testing...</>
+                                    ) : testResults[w.id] ? (
+                                        <><Icon name="Check" size={12} /> Passed</>
+                                    ) : (
+                                        <><Icon name="Play" size={12} /> Test</>
+                                    )}
+                                </button>
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+
+            {/* Master API Key */}
+            <div className="mt-6 rounded-xl p-5" style={{ background: '#111', border: '1px solid #1F1F1F' }}>
+                <div className="flex items-center gap-2 mb-3">
+                    <Icon name="Shield" size={16} color="#EAB308" />
+                    <h3 className="font-semibold text-sm">Master API Key</h3>
+                </div>
+                <p className="text-xs text-gray-500 mb-3">Add this header to every webhook call for security</p>
+                <div className="flex items-center gap-2 p-3 rounded-lg" style={{ background: '#0A0A0A', border: '1px solid #1A1A1A' }}>
+                    <code className="text-xs text-yellow-400 flex-1">x-api-key: {apiKey}</code>
+                    <button onClick={() => copy(apiKey, 'apikey')}
+                        className="flex-shrink-0 text-gray-500 hover:text-white transition-colors">
+                        <Icon name={copied === 'apikey' ? 'Check' : 'Copy'} size={14} color={copied === 'apikey' ? '#22C55E' : undefined} />
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// SECTION 3 — Make.com Scenario Guide
+// ════════════════════════════════════════════════════════════════════════════
+
+const GUIDE_STEPS = [
+    {
+        num: 1, title: 'Pull leads from Apollo every day', icon: 'Search', color: '#6366F1',
+        desc: 'Set a daily schedule trigger in Make.com at 8:00 AM EST',
+        code: `{
+  "trigger": "Schedule",
+  "time": "08:00",
+  "timezone": "America/New_York",
+  "repeat": "daily"
+}`,
+    },
+    {
+        num: 2, title: 'Enrich leads with Clay', icon: 'Layers', color: '#F97316',
+        desc: 'Send each lead to Clay for email finding and scoring',
+        fields: [
+            { from: 'first_name', to: '{{1.first_name}}' },
+            { from: 'last_name', to: '{{1.last_name}}' },
+            { from: 'company', to: '{{1.company}}' },
+            { from: 'linkedin_url', to: '{{1.linkedin}}' },
+        ],
+    },
+    {
+        num: 3, title: 'Filter by score', icon: 'Filter', color: '#EAB308',
+        desc: 'Only continue if score >= 6',
+        code: `{
+  "filter": "score >= 6",
+  "action": "continue_if_true"
+}`,
+    },
+    {
+        num: 4, title: 'Push lead to your dashboard', icon: 'Send', color: '#2563EB',
+        desc: 'HTTP POST to your webhook',
+        code: `{
+  "url": "${BASE_URL}/api-leads",
+  "method": "POST",
+  "headers": {
+    "x-api-key": "[your-api-key]",
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "client_id": "[client-id]",
+    "name": "{{first_name}} {{last_name}}",
+    "company": "{{company}}",
+    "email": "{{email}}",
+    "phone": "{{phone}}",
+    "specialty": "{{specialty}}",
+    "score": "{{score}}",
+    "status": "New"
+  }
+}`,
+    },
+    {
+        num: 5, title: 'Enroll lead in email sequence', icon: 'Mail', color: '#2563EB',
+        desc: 'Add lead to Instantly campaign',
+        fields: [
+            { from: 'API Key', to: '[from Instantly settings]' },
+            { from: 'Campaign ID', to: '[from your campaign]' },
+            { from: 'Email', to: '{{email}}' },
+            { from: 'First Name', to: '{{first_name}}' },
+            { from: 'Custom variables', to: 'specialty, location' },
+        ],
+    },
+    {
+        num: 6, title: 'Auto-call high-score leads', icon: 'Phone', color: '#8B5CF6',
+        desc: 'If score >= 8, trigger Retell voice agent immediately',
+        code: `{
+  "condition": "score >= 8",
+  "action": "POST to Retell API",
+  "url": "https://api.retellai.com/v2/create-phone-call",
+  "headers": {
+    "Authorization": "Bearer [retell-api-key]"
+  },
+  "body": {
+    "from_number": "[your-twilio-number]",
+    "to_number": "{{phone}}",
+    "agent_id": "[your-agent-id]",
+    "metadata": {
+      "first_name": "{{first_name}}",
+      "specialty": "{{specialty}}",
+      "broker_name": "[client-broker-name]",
+      "calendly_link": "[client-calendly-link]"
+    }
+  }
+}`,
+    },
+];
+
+function MakeGuidePage() {
+    const [copied, copy] = useCopy();
+    const [expandedStep, setExpandedStep] = useState(1);
+
+    return (
+        <div>
+            <div className="mb-6">
+                <h1 className="text-2xl font-bold">Make.com Scenario Guide</h1>
+                <p className="text-sm text-gray-500 mt-1">Step-by-step setup for your automation pipeline</p>
+            </div>
+
+            {/* Pipeline visualization */}
+            <div className="flex items-center gap-2 mb-6 overflow-x-auto pb-2">
+                {GUIDE_STEPS.map((s, i) => (
+                    <React.Fragment key={s.num}>
+                        <button onClick={() => setExpandedStep(s.num)}
+                            className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium flex-shrink-0 transition-colors"
+                            style={{
+                                background: expandedStep === s.num ? `${s.color}20` : '#111',
+                                border: `1px solid ${expandedStep === s.num ? `${s.color}50` : '#1F1F1F'}`,
+                                color: expandedStep === s.num ? s.color : '#9CA3AF',
+                            }}>
+                            <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold"
+                                style={{ background: `${s.color}25`, color: s.color }}>{s.num}</span>
+                            {s.title.split(' ').slice(0, 2).join(' ')}
+                        </button>
+                        {i < GUIDE_STEPS.length - 1 && <Icon name="ChevronRight" size={14} color="#333" />}
+                    </React.Fragment>
+                ))}
+            </div>
+
+            <div className="space-y-4">
+                {GUIDE_STEPS.map(s => (
+                    <div key={s.num} className="rounded-xl overflow-hidden"
+                        style={{ background: '#111', border: `1px solid ${expandedStep === s.num ? `${s.color}40` : '#1F1F1F'}` }}>
+                        <div className="flex items-center gap-4 px-5 py-4 cursor-pointer"
+                            onClick={() => setExpandedStep(expandedStep === s.num ? null : s.num)}
+                            style={{ borderBottom: expandedStep === s.num ? '1px solid #1F1F1F' : 'none' }}>
+                            <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                                style={{ background: `${s.color}15` }}>
+                                <Icon name={s.icon} size={16} color={s.color} />
+                            </div>
+                            <div className="flex-1">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] text-gray-600 font-bold">STEP {s.num}</span>
+                                    <h3 className="text-sm font-semibold">{s.title}</h3>
+                                </div>
+                                <p className="text-xs text-gray-500 mt-0.5">{s.desc}</p>
+                            </div>
+                            <Icon name={expandedStep === s.num ? 'ChevronUp' : 'ChevronDown'} size={16} color="#555" />
+                        </div>
+
+                        {expandedStep === s.num && (
+                            <div className="px-5 py-4">
+                                {s.code && (
+                                    <div className="relative rounded-lg overflow-hidden" style={{ background: '#0A0A0A', border: '1px solid #1A1A1A' }}>
+                                        <div className="flex items-center justify-between px-4 py-2" style={{ borderBottom: '1px solid #1A1A1A' }}>
+                                            <span className="text-[10px] text-gray-600 uppercase tracking-wider">Configuration</span>
+                                            <button onClick={() => copy(s.code, `step-${s.num}`)}
+                                                className="flex items-center gap-1 text-[10px] text-gray-500 hover:text-white transition-colors">
+                                                <Icon name={copied === `step-${s.num}` ? 'Check' : 'Copy'} size={11} color={copied === `step-${s.num}` ? '#22C55E' : undefined} />
+                                                {copied === `step-${s.num}` ? 'Copied!' : 'Copy'}
+                                            </button>
+                                        </div>
+                                        <pre className="p-4 text-xs text-green-400 overflow-x-auto"><code>{s.code}</code></pre>
+                                    </div>
+                                )}
+                                {s.fields && (
+                                    <div className="rounded-lg overflow-hidden" style={{ border: '1px solid #1A1A1A' }}>
+                                        <div className="px-4 py-2" style={{ background: '#0D0D0D', borderBottom: '1px solid #1A1A1A' }}>
+                                            <span className="text-[10px] text-gray-600 uppercase tracking-wider">Field Mapping</span>
+                                        </div>
+                                        <div className="divide-y divide-[#1A1A1A]">
+                                            {s.fields.map((f, i) => (
+                                                <div key={i} className="flex items-center px-4 py-2.5" style={{ background: '#0A0A0A' }}>
+                                                    <span className="text-xs text-gray-400 w-36">{f.from}</span>
+                                                    <Icon name="ArrowRight" size={12} color="#333" className="mx-3" />
+                                                    <code className="text-xs text-blue-400">{f.to}</code>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// SECTION 4 — API Keys Manager
+// ════════════════════════════════════════════════════════════════════════════
+
+const KEY_DEFS = [
+    { id: 'apollo', name: 'Apollo API Key', icon: 'Search', color: '#6366F1', updated: '2026-04-28T10:00:00Z' },
+    { id: 'clay', name: 'Clay API Key', icon: 'Layers', color: '#F97316', updated: '2026-04-25T14:30:00Z' },
+    { id: 'instantly', name: 'Instantly API Key', icon: 'Mail', color: '#2563EB', updated: '2026-05-01T09:15:00Z' },
+    { id: 'retell', name: 'Retell API Key', icon: 'Phone', color: '#8B5CF6', updated: '2026-04-30T16:45:00Z' },
+    { id: 'twilio_sid', name: 'Twilio Account SID', icon: 'Smartphone', color: '#EF4444', updated: '2026-04-20T11:00:00Z' },
+    { id: 'twilio_auth', name: 'Twilio Auth Token', icon: 'Smartphone', color: '#EF4444', updated: '2026-04-20T11:00:00Z' },
+    { id: 'calendly', name: 'Calendly API Key', icon: 'Calendar', color: '#22C55E', updated: null },
+];
+
+function APIKeysPage() {
+    const [keys, setKeys] = useState(() =>
+        KEY_DEFS.reduce((acc, k) => ({ ...acc, [k.id]: k.updated ? '•'.repeat(32) : '' }), {})
+    );
+    const [visible, setVisible] = useState({});
+    const [saving, setSaving] = useState('');
+    const [saved, setSaved] = useState({});
+
+    const toggleVis = (id) => setVisible(v => ({ ...v, [id]: !v[id] }));
+    const updateKey = (id, val) => setKeys(k => ({ ...k, [id]: val }));
+
+    const saveKey = (id) => {
+        setSaving(id);
+        setTimeout(() => {
+            setSaving('');
+            setSaved(prev => ({ ...prev, [id]: true }));
+            setTimeout(() => setSaved(prev => ({ ...prev, [id]: false })), 2000);
+        }, 800);
+    };
+
+    return (
+        <div>
+            <div className="mb-6">
+                <h1 className="text-2xl font-bold">API Keys Manager</h1>
+                <p className="text-sm text-gray-500 mt-1">Securely store credentials for all external services</p>
+            </div>
+
+            {/* Warning banner */}
+            <div className="rounded-xl p-4 mb-6 flex items-center gap-3"
+                style={{ background: 'rgba(234,179,8,0.06)', border: '1px solid rgba(234,179,8,0.15)' }}>
+                <Icon name="ShieldCheck" size={18} color="#EAB308" />
+                <div>
+                    <div className="text-xs font-medium text-yellow-400">Encrypted Storage</div>
+                    <div className="text-[10px] text-gray-500">These keys are encrypted and never exposed to clients. Stored in Supabase Vault.</div>
+                </div>
+            </div>
+
+            <div className="space-y-3">
+                {KEY_DEFS.map(k => (
+                    <div key={k.id} className="rounded-xl p-4" style={{ background: '#111', border: '1px solid #1F1F1F' }}>
+                        <div className="flex items-center gap-4">
+                            <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                                style={{ background: `${k.color}15` }}>
+                                <Icon name={k.icon} size={16} color={k.color} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <div className="text-sm font-medium mb-1">{k.name}</div>
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        type={visible[k.id] ? 'text' : 'password'}
+                                        value={keys[k.id]}
+                                        onChange={e => updateKey(k.id, e.target.value)}
+                                        placeholder="Enter API key..."
+                                        className="flex-1 rounded-lg px-3 py-2 text-xs font-mono"
+                                        style={IS} onFocus={fb} onBlur={bb}
+                                    />
+                                    <button onClick={() => toggleVis(k.id)}
+                                        className="p-2 rounded-lg text-gray-500 hover:text-white transition-colors"
+                                        style={{ border: '1px solid #1A1A1A' }}>
+                                        <Icon name={visible[k.id] ? 'EyeOff' : 'Eye'} size={14} />
+                                    </button>
+                                    <button onClick={() => saveKey(k.id)}
+                                        disabled={saving === k.id}
+                                        className="px-3 py-2 rounded-lg text-xs font-medium transition-colors"
+                                        style={{
+                                            background: saved[k.id] ? 'rgba(34,197,94,0.15)' : 'rgba(37,99,235,0.1)',
+                                            color: saved[k.id] ? '#22C55E' : '#2563EB',
+                                            border: `1px solid ${saved[k.id] ? 'rgba(34,197,94,0.25)' : 'rgba(37,99,235,0.25)'}`,
+                                            opacity: saving === k.id ? 0.5 : 1,
+                                        }}>
+                                        {saving === k.id ? '...' : saved[k.id] ? 'Saved!' : 'Save'}
+                                    </button>
+                                </div>
+                                {k.updated && (
+                                    <div className="text-[10px] text-gray-600 mt-1.5">
+                                        Last updated: {new Date(k.updated).toLocaleDateString()}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// SECTION 5 — System Health Dashboard
+// ════════════════════════════════════════════════════════════════════════════
+
+const SERVICES = [
+    { id: 'apollo', name: 'Apollo API', icon: 'Search', status: 'Operational', uptime: 99.8, latency: 142 },
+    { id: 'clay', name: 'Clay API', icon: 'Layers', status: 'Operational', uptime: 99.9, latency: 89 },
+    { id: 'instantly', name: 'Instantly API', icon: 'Mail', status: 'Operational', uptime: 99.7, latency: 156 },
+    { id: 'retell', name: 'Retell AI', icon: 'Phone', status: 'Degraded', uptime: 97.2, latency: 820 },
+    { id: 'twilio', name: 'Twilio', icon: 'Smartphone', status: 'Operational', uptime: 99.99, latency: 45 },
+    { id: 'supabase', name: 'Supabase Database', icon: 'Database', status: 'Operational', uptime: 99.95, latency: 28 },
+    { id: 'email', name: 'Email Delivery', icon: 'Send', status: 'Operational', uptime: 99.6, latency: 234 },
+];
+
+const INCIDENTS = [
+    { id: 1, service: 'Retell AI', message: 'High latency detected — response time > 800ms', time: '2026-05-05T14:20:00Z', severity: 'warning' },
+    { id: 2, service: 'Instantly API', message: 'Rate limit hit — 429 response for 2 minutes', time: '2026-05-05T10:15:00Z', severity: 'warning' },
+    { id: 3, service: 'Clay API', message: 'Enrichment timeout for batch of 15 leads', time: '2026-05-04T22:30:00Z', severity: 'error' },
+    { id: 4, service: 'Email Delivery', message: 'Bounce rate spike — 3 emails bounced', time: '2026-05-04T16:45:00Z', severity: 'warning' },
+    { id: 5, service: 'Apollo API', message: 'Search endpoint returned 503 for 45 seconds', time: '2026-05-04T08:12:00Z', severity: 'error' },
+    { id: 6, service: 'Twilio', message: 'Call routing delay in US-EAST region', time: '2026-05-03T19:30:00Z', severity: 'warning' },
+    { id: 7, service: 'Supabase Database', message: 'Connection pool briefly exhausted', time: '2026-05-03T11:05:00Z', severity: 'error' },
+    { id: 8, service: 'Retell AI', message: 'Voice synthesis latency above threshold', time: '2026-05-02T15:40:00Z', severity: 'warning' },
+    { id: 9, service: 'Instantly API', message: 'Campaign webhook delivery delayed by 10 min', time: '2026-05-02T09:20:00Z', severity: 'warning' },
+    { id: 10, service: 'Clay API', message: 'LinkedIn enrichment temporarily unavailable', time: '2026-05-01T14:00:00Z', severity: 'error' },
+];
+
+function SystemHealthPage() {
+    const [lastRefresh, setLastRefresh] = useState(new Date());
+    const [refreshing, setRefreshing] = useState(false);
+
+    useEffect(() => {
+        const iv = setInterval(() => {
+            setRefreshing(true);
+            setTimeout(() => { setRefreshing(false); setLastRefresh(new Date()); }, 500);
+        }, 60000);
+        return () => clearInterval(iv);
+    }, []);
+
+    const refresh = () => {
+        setRefreshing(true);
+        setTimeout(() => { setRefreshing(false); setLastRefresh(new Date()); }, 500);
+    };
+
+    const allOk = SERVICES.every(s => s.status === 'Operational');
+    const dotColor = { Operational: '#22C55E', Degraded: '#EAB308', Down: '#EF4444' };
+
+    return (
+        <div>
+            <div className="flex items-center justify-between mb-6">
+                <div>
+                    <h1 className="text-2xl font-bold">System Health</h1>
+                    <p className="text-sm text-gray-500 mt-1">Real-time status of all connected services</p>
+                </div>
+                <div className="flex items-center gap-3">
+                    <span className="text-[10px] text-gray-600">
+                        Last check: {lastRefresh.toLocaleTimeString()}
+                    </span>
+                    <button onClick={refresh}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-gray-400 transition-colors"
+                        style={{ border: '1px solid #1A1A1A' }}>
+                        <Icon name="RefreshCw" size={12} className={refreshing ? 'animate-spin' : ''} /> Refresh
+                    </button>
+                </div>
+            </div>
+
+            {/* Overall status */}
+            <div className="rounded-xl p-4 mb-6 flex items-center gap-3"
+                style={{
+                    background: allOk ? 'rgba(34,197,94,0.06)' : 'rgba(234,179,8,0.06)',
+                    border: `1px solid ${allOk ? 'rgba(34,197,94,0.15)' : 'rgba(234,179,8,0.15)'}`,
+                }}>
+                <div className="w-3 h-3 rounded-full" style={{ background: allOk ? '#22C55E' : '#EAB308' }} />
+                <span className="text-sm font-medium" style={{ color: allOk ? '#22C55E' : '#EAB308' }}>
+                    {allOk ? 'All Systems Operational' : 'Some Services Degraded'}
+                </span>
+                <span className="text-[10px] text-gray-500 ml-auto">Auto-refreshes every 60s</span>
+            </div>
+
+            {/* Services grid */}
+            <div className="space-y-2 mb-6">
+                {SERVICES.map(s => (
+                    <div key={s.id} className="rounded-xl p-4 flex items-center gap-4"
+                        style={{ background: '#111', border: '1px solid #1F1F1F' }}>
+                        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: dotColor[s.status] }} />
+                        <Icon name={s.icon} size={16} color="#555" />
+                        <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium">{s.name}</span>
+                                <Badge status={s.status} />
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-6 text-xs text-gray-500 flex-shrink-0">
+                            <span>Latency: <span className={s.latency > 500 ? 'text-yellow-400' : 'text-gray-400'}>{s.latency}ms</span></span>
+                            <div className="flex items-center gap-2 w-40">
+                                <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: '#1A1A1A' }}>
+                                    <div className="h-full rounded-full" style={{
+                                        width: `${s.uptime}%`,
+                                        background: s.uptime >= 99.5 ? '#22C55E' : s.uptime >= 98 ? '#EAB308' : '#EF4444',
+                                    }} />
+                                </div>
+                                <span className="text-[10px] w-12 text-right" style={{
+                                    color: s.uptime >= 99.5 ? '#22C55E' : s.uptime >= 98 ? '#EAB308' : '#EF4444',
+                                }}>{s.uptime}%</span>
+                            </div>
+                        </div>
+                    </div>
+                ))}
+            </div>
+
+            {/* Incident Log */}
+            <div className="rounded-xl overflow-hidden" style={{ background: '#111', border: '1px solid #1F1F1F' }}>
+                <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: '1px solid #1F1F1F' }}>
+                    <h3 className="text-sm font-semibold">Incident Log</h3>
+                    <span className="text-[10px] text-gray-500">Last 10 events</span>
+                </div>
+                <div className="divide-y divide-[#1A1A1A]">
+                    {INCIDENTS.map(inc => (
+                        <div key={inc.id} className="flex items-start gap-3 px-5 py-3">
+                            <div className="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0"
+                                style={{ background: inc.severity === 'error' ? '#EF4444' : '#EAB308' }} />
+                            <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-0.5">
+                                    <span className="text-xs font-medium">{inc.service}</span>
+                                    <span className={`text-[10px] ${inc.severity === 'error' ? 'text-red-400' : 'text-yellow-400'}`}>
+                                        {inc.severity}
+                                    </span>
+                                </div>
+                                <p className="text-xs text-gray-500">{inc.message}</p>
+                            </div>
+                            <span className="text-[10px] text-gray-600 whitespace-nowrap flex-shrink-0">
+                                {new Date(inc.time).toLocaleString()}
+                            </span>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// APP
+// ════════════════════════════════════════════════════════════════════════════
+
+function App() {
+    const [page, setPage] = useState('hub');
+    const [sbOpen, setSbOpen] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [demoMode, setDemoMode] = useState(false);
+
+    useEffect(() => {
+        (async () => {
+            if (!sb) { setDemoMode(true); setLoading(false); return; }
+            try {
+                const { data: { session }, error } = await sb.auth.getSession();
+                if (error || !session || session.user.email !== ADMIN_EMAIL) setDemoMode(true);
+            } catch(e) { setDemoMode(true); }
+            setLoading(false);
+        })();
+    }, []);
+
+    if (loading) return (
+        <div className="h-full flex items-center justify-center">
+            <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        </div>
+    );
+
+    const pages = {
+        hub: IntegrationHubPage,
+        webhooks: WebhookCenterPage,
+        guide: MakeGuidePage,
+        keys: APIKeysPage,
+        health: SystemHealthPage,
+    };
+    const Page = pages[page] || IntegrationHubPage;
+
+    return (
+        <div className="h-full flex">
+            <Sidebar page={page} setPage={setPage} open={sbOpen} setOpen={setSbOpen} />
+            <main className="flex-1 md:ml-60 min-h-full">
+                <header className="h-14 flex items-center justify-between px-5 sticky top-0 z-10"
+                    style={{ background: '#0A0A0A', borderBottom: '1px solid #1A1A1A' }}>
+                    <div className="flex items-center gap-3">
+                        <button className="md:hidden text-gray-400" onClick={() => setSbOpen(true)}>
+                            <Icon name="Menu" size={20} />
+                        </button>
+                        <span className="text-sm text-gray-500">Integrations</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        {demoMode && (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">Demo Mode</span>
+                        )}
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
+                            style={{ background: 'rgba(37,99,235,0.15)', color: '#60A5FA', border: '1px solid rgba(37,99,235,0.25)' }}>A</div>
+                    </div>
+                </header>
+                <div className="p-6 max-w-6xl">
+                    <Page />
+                </div>
+            </main>
+        </div>
+    );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

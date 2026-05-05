@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Get Started — BrokerPipeline.ai</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        html,body,#root{height:100%}
+        body{background:#0A0A0A;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
+        input:focus,textarea:focus,select:focus{outline:none}
+        ::-webkit-scrollbar{width:5px}
+        ::-webkit-scrollbar-track{background:transparent}
+        ::-webkit-scrollbar-thumb{background:#2A2A2A;border-radius:99px}
+
+        .step-enter{animation:stepIn .4s cubic-bezier(.4,0,.2,1) both}
+        @keyframes stepIn{from{opacity:0;transform:translateX(30px)}to{opacity:1;transform:translateX(0)}}
+
+        .check-anim{animation:scaleIn .5s cubic-bezier(.175,.885,.32,1.275) both .2s}
+        @keyframes scaleIn{from{opacity:0;transform:scale(0)}to{opacity:1;transform:scale(1)}}
+
+        .check-ring{animation:ringPulse 1.5s ease-out infinite}
+        @keyframes ringPulse{0%{box-shadow:0 0 0 0 rgba(37,99,235,0.4)}70%{box-shadow:0 0 0 20px rgba(37,99,235,0)}100%{box-shadow:0 0 0 0 rgba(37,99,235,0)}}
+
+        .gradient-blur{position:absolute;width:500px;height:500px;border-radius:50%;background:radial-gradient(circle,rgba(37,99,235,0.1) 0%,transparent 70%);pointer-events:none}
+    </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+// ── Supabase ──────────────────────────────────────────────────────────────────
+const SUPABASE_URL      = 'https://glokxezbcrelrndcbhhs.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdsb2t4ZXpiY3JlbHJuZGNiaGhzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5NzMxNzEsImV4cCI6MjA5MzU0OTE3MX0.imnH5pmrXpiKz18fzxyF78b23luNNmu9izM3yBSlbQ4';
+
+let sb = null;
+try {
+    if (typeof supabase !== 'undefined' && supabase.createClient) {
+        sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    }
+} catch(e) { console.warn('Supabase init failed:', e); }
+
+// ── Icon ──────────────────────────────────────────────────────────────────────
+function Icon({ name, size = 18, color = 'currentColor' }) {
+    const ref = useRef(null);
+    useEffect(() => {
+        if (!ref.current || !lucide?.icons?.[name]) return;
+        ref.current.innerHTML = '';
+        const svg = lucide.createElement(lucide.icons[name]);
+        svg.setAttribute('width', size);
+        svg.setAttribute('height', size);
+        svg.setAttribute('stroke', color);
+        svg.style.display = 'block';
+        ref.current.appendChild(svg);
+    }, [name, size, color]);
+    return <span ref={ref} style={{ display: 'inline-flex', alignItems: 'center' }} />;
+}
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+const US_STATES = [
+    'Alabama','Alaska','Arizona','Arkansas','California','Colorado','Connecticut',
+    'Delaware','Florida','Georgia','Hawaii','Idaho','Illinois','Indiana','Iowa',
+    'Kansas','Kentucky','Louisiana','Maine','Maryland','Massachusetts','Michigan',
+    'Minnesota','Mississippi','Missouri','Montana','Nebraska','Nevada','New Hampshire',
+    'New Jersey','New Mexico','New York','North Carolina','North Dakota','Ohio',
+    'Oklahoma','Oregon','Pennsylvania','Rhode Island','South Carolina','South Dakota',
+    'Tennessee','Texas','Utah','Vermont','Virginia','Washington','West Virginia',
+    'Wisconsin','Wyoming'
+];
+
+const INSURANCE_TYPES = ['Life','Health','Commercial','Auto','Home','Medicare'];
+const CLIENT_SIZES   = ['Solo','2-10','10-50','50-200','200+'];
+const INDUSTRIES     = ['Healthcare','Real Estate','Construction','Retail','Tech','Other'];
+const OFFERS         = ['Free quote','Free consultation','Free audit','Other'];
+const HOURS          = ['Morning (8am–12pm)','Afternoon (12pm–5pm)','Evening (5pm–8pm)'];
+const TIMEZONES      = [
+    { value:'America/New_York',    label:'Eastern (ET)' },
+    { value:'America/Chicago',     label:'Central (CT)' },
+    { value:'America/Denver',      label:'Mountain (MT)' },
+    { value:'America/Los_Angeles', label:'Pacific (PT)' },
+    { value:'America/Anchorage',   label:'Alaska (AKT)' },
+    { value:'Pacific/Honolulu',    label:'Hawaii (HT)' },
+];
+
+const STEP_TITLES = [
+    'Tell us about you',
+    'Your ideal client',
+    'Your offer',
+    'Calendar setup',
+    "You're all set!",
+];
+
+// ── Shared UI ─────────────────────────────────────────────────────────────────
+const inputStyle = {
+    background: '#111', border: '1px solid #1F1F1F', color: '#e5e7eb',
+};
+const focusBorder = (e) => e.target.style.borderColor = '#2563EB';
+const blurBorder  = (e) => e.target.style.borderColor = '#1F1F1F';
+
+function Input({ label, ...props }) {
+    return (
+        <div>
+            <label className="block text-xs text-gray-400 mb-1.5">{label}</label>
+            <input
+                className="w-full rounded-xl px-4 py-3 text-sm placeholder-gray-600 transition-colors"
+                style={inputStyle}
+                onFocus={focusBorder} onBlur={blurBorder}
+                {...props}
+            />
+        </div>
+    );
+}
+
+function Select({ label, options, placeholder, ...props }) {
+    return (
+        <div>
+            <label className="block text-xs text-gray-400 mb-1.5">{label}</label>
+            <select
+                className="w-full rounded-xl px-4 py-3 text-sm transition-colors appearance-none"
+                style={{ ...inputStyle, color: props.value ? '#e5e7eb' : '#6B7280' }}
+                onFocus={focusBorder} onBlur={blurBorder}
+                {...props}
+            >
+                <option value="" style={{ background: '#111' }}>{placeholder || 'Select...'}</option>
+                {options.map(o => {
+                    const val   = typeof o === 'object' ? o.value : o;
+                    const label = typeof o === 'object' ? o.label : o;
+                    return <option key={val} value={val} style={{ background: '#111' }}>{label}</option>;
+                })}
+            </select>
+        </div>
+    );
+}
+
+function Textarea({ label, ...props }) {
+    return (
+        <div>
+            <label className="block text-xs text-gray-400 mb-1.5">{label}</label>
+            <textarea
+                className="w-full rounded-xl px-4 py-3 text-sm placeholder-gray-600 transition-colors resize-none"
+                style={inputStyle}
+                onFocus={focusBorder} onBlur={blurBorder}
+                rows={3}
+                {...props}
+            />
+        </div>
+    );
+}
+
+function CheckboxGroup({ label, options, selected, onChange }) {
+    const toggle = (val) => {
+        onChange(selected.includes(val)
+            ? selected.filter(v => v !== val)
+            : [...selected, val]
+        );
+    };
+    return (
+        <div>
+            <label className="block text-xs text-gray-400 mb-2">{label}</label>
+            <div className="flex flex-wrap gap-2">
+                {options.map(opt => {
+                    const active = selected.includes(opt);
+                    return (
+                        <button
+                            key={opt}
+                            type="button"
+                            onClick={() => toggle(opt)}
+                            className="px-3.5 py-2 rounded-lg text-sm font-medium transition-all"
+                            style={{
+                                background: active ? 'rgba(37,99,235,0.15)' : '#111',
+                                border: `1px solid ${active ? '#2563EB' : '#1F1F1F'}`,
+                                color: active ? '#60A5FA' : '#9CA3AF',
+                            }}
+                        >
+                            {active && <span className="mr-1.5">✓</span>}
+                            {opt}
+                        </button>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+
+function TagSelect({ label, options, selected, onChange }) {
+    const toggle = (val) => {
+        onChange(selected.includes(val)
+            ? selected.filter(v => v !== val)
+            : [...selected, val]
+        );
+    };
+    return (
+        <div>
+            <label className="block text-xs text-gray-400 mb-2">{label}</label>
+            <div className="flex flex-wrap gap-2">
+                {options.map(opt => {
+                    const active = selected.includes(opt);
+                    return (
+                        <button
+                            key={opt}
+                            type="button"
+                            onClick={() => toggle(opt)}
+                            className="px-3 py-1.5 rounded-full text-xs font-medium transition-all"
+                            style={{
+                                background: active ? '#2563EB' : '#111',
+                                border: `1px solid ${active ? '#2563EB' : '#1F1F1F'}`,
+                                color: active ? '#fff' : '#9CA3AF',
+                            }}
+                        >
+                            {opt}
+                            {active && <span className="ml-1.5 opacity-70">×</span>}
+                        </button>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+
+// ── Progress Bar ──────────────────────────────────────────────────────────────
+function ProgressBar({ step, total }) {
+    const pct = ((step + 1) / total) * 100;
+    return (
+        <div className="mb-8">
+            <div className="flex items-center justify-between mb-2">
+                <span className="text-xs text-gray-500">Step {step + 1} of {total}</span>
+                <span className="text-xs text-gray-500">{STEP_TITLES[step]}</span>
+            </div>
+            <div className="h-1.5 rounded-full overflow-hidden" style={{ background: '#1A1A1A' }}>
+                <div
+                    className="h-full rounded-full transition-all duration-500 ease-out"
+                    style={{ width: `${pct}%`, background: '#2563EB' }}
+                />
+            </div>
+        </div>
+    );
+}
+
+// ── Step 1 ────────────────────────────────────────────────────────────────────
+function Step1({ data, update }) {
+    return (
+        <div className="step-enter space-y-5">
+            <div>
+                <h2 className="text-xl font-semibold">Tell us about you</h2>
+                <p className="text-sm text-gray-500 mt-1">We'll use this to personalize your outreach.</p>
+            </div>
+            <Input label="Full Name" placeholder="John Smith" value={data.full_name} onChange={e => update('full_name', e.target.value)} />
+            <Input label="Agency Name" placeholder="Smith Insurance Group" value={data.agency_name} onChange={e => update('agency_name', e.target.value)} />
+            <Select label="Years in Insurance" options={['1-3 years','3-5 years','5-10 years','10+ years']} placeholder="Select experience..." value={data.years_in_insurance} onChange={e => update('years_in_insurance', e.target.value)} />
+            <Select label="State" options={US_STATES} placeholder="Select your state..." value={data.state} onChange={e => update('state', e.target.value)} />
+        </div>
+    );
+}
+
+// ── Step 2 ────────────────────────────────────────────────────────────────────
+function Step2({ data, update }) {
+    return (
+        <div className="step-enter space-y-5">
+            <div>
+                <h2 className="text-xl font-semibold">Your ideal client</h2>
+                <p className="text-sm text-gray-500 mt-1">Help our AI find the right prospects for you.</p>
+            </div>
+            <CheckboxGroup label="What type of insurance do you sell?" options={INSURANCE_TYPES} selected={data.insurance_types} onChange={v => update('insurance_types', v)} />
+            <Select label="Ideal client business size" options={CLIENT_SIZES} placeholder="Select size..." value={data.ideal_client_size} onChange={e => update('ideal_client_size', e.target.value)} />
+            <TagSelect label="Target industries" options={INDUSTRIES} selected={data.target_industries} onChange={v => update('target_industries', v)} />
+        </div>
+    );
+}
+
+// ── Step 3 ────────────────────────────────────────────────────────────────────
+function Step3({ data, update }) {
+    return (
+        <div className="step-enter space-y-5">
+            <div>
+                <h2 className="text-xl font-semibold">Your offer</h2>
+                <p className="text-sm text-gray-500 mt-1">What should our AI pitch to prospects?</p>
+            </div>
+            <Select label="What do you offer prospects on the first call?" options={OFFERS} placeholder="Select offer..." value={data.first_call_offer} onChange={e => update('first_call_offer', e.target.value)} />
+            <Textarea label="What's your strongest selling point?" placeholder="e.g. 15 years experience, exclusive carrier access, bundled savings..." value={data.selling_point} onChange={e => update('selling_point', e.target.value)} />
+            <Textarea label="Any types of clients to AVOID?" placeholder="e.g. No startups, no personal auto, no businesses under $500k revenue..." value={data.clients_to_avoid} onChange={e => update('clients_to_avoid', e.target.value)} />
+        </div>
+    );
+}
+
+// ── Step 4 ────────────────────────────────────────────────────────────────────
+function Step4({ data, update }) {
+    const calendlyValid = !data.calendly_link || /^https?:\/\/(calendly\.com|cal\.com)\//.test(data.calendly_link);
+    return (
+        <div className="step-enter space-y-5">
+            <div>
+                <h2 className="text-xl font-semibold">Calendar setup</h2>
+                <p className="text-sm text-gray-500 mt-1">Tell us when and how to book meetings.</p>
+            </div>
+            <div>
+                <Input label="Calendly / Cal.com link" placeholder="https://calendly.com/yourname" value={data.calendly_link} onChange={e => update('calendly_link', e.target.value)} />
+                {data.calendly_link && !calendlyValid && (
+                    <p className="text-xs mt-1.5" style={{ color: '#EF4444' }}>
+                        Please enter a valid Calendly or Cal.com URL
+                    </p>
+                )}
+            </div>
+            <CheckboxGroup label="Available hours for calls" options={HOURS} selected={data.available_hours} onChange={v => update('available_hours', v)} />
+            <Select label="Timezone" options={TIMEZONES} value={data.timezone} onChange={e => update('timezone', e.target.value)} />
+        </div>
+    );
+}
+
+// ── Step 5 — Success ──────────────────────────────────────────────────────────
+function Step5({ data }) {
+    const rows = [
+        { label: 'Name',          value: data.full_name },
+        { label: 'Agency',        value: data.agency_name },
+        { label: 'Experience',    value: data.years_in_insurance },
+        { label: 'State',         value: data.state },
+        { label: 'Insurance',     value: data.insurance_types?.join(', ') },
+        { label: 'Client size',   value: data.ideal_client_size },
+        { label: 'Industries',    value: data.target_industries?.join(', ') },
+        { label: 'First call',    value: data.first_call_offer },
+        { label: 'Calendar',      value: data.calendly_link },
+        { label: 'Hours',         value: data.available_hours?.map(h => h.split(' ')[0]).join(', ') },
+        { label: 'Timezone',      value: TIMEZONES.find(t => t.value === data.timezone)?.label },
+    ].filter(r => r.value);
+
+    return (
+        <div className="step-enter text-center">
+            {/* Animated checkmark */}
+            <div className="flex justify-center mb-6">
+                <div
+                    className="w-20 h-20 rounded-full flex items-center justify-center check-anim check-ring"
+                    style={{ background: 'rgba(37,99,235,0.15)', border: '2px solid #2563EB' }}
+                >
+                    <Icon name="Check" size={36} color="#2563EB" />
+                </div>
+            </div>
+
+            <h2 className="text-2xl font-bold mb-2">You're all set!</h2>
+            <p className="text-gray-400 max-w-md mx-auto mb-8">
+                Your AI sales team is being configured. You'll receive your first leads within 48 hours.
+            </p>
+
+            {/* Summary */}
+            <div
+                className="rounded-xl p-5 text-left max-w-md mx-auto mb-8"
+                style={{ background: '#111', border: '1px solid #1A1A1A' }}
+            >
+                <h3 className="text-xs text-gray-500 uppercase tracking-wider mb-3 font-medium">Your profile summary</h3>
+                <div className="space-y-2">
+                    {rows.map((r, i) => (
+                        <div key={i} className="flex justify-between text-sm">
+                            <span className="text-gray-500">{r.label}</span>
+                            <span className="text-gray-300 text-right ml-4 truncate max-w-[200px]">{r.value}</span>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            <a
+                href="dashboard.html"
+                className="inline-flex items-center gap-2 px-8 py-3.5 rounded-full text-sm font-medium text-white transition-colors"
+                style={{ background: '#2563EB' }}
+                onMouseEnter={e => e.currentTarget.style.background = '#1D4ED8'}
+                onMouseLeave={e => e.currentTarget.style.background = '#2563EB'}
+            >
+                Go to Dashboard
+                <Icon name="ArrowRight" size={16} color="#fff" />
+            </a>
+        </div>
+    );
+}
+
+// ── Main App ──────────────────────────────────────────────────────────────────
+function App() {
+    const [step, setStep] = useState(0);
+    const [saving, setSaving] = useState(false);
+    const [user, setUser] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [data, setData] = useState({
+        full_name: '', agency_name: '', years_in_insurance: '', state: '',
+        insurance_types: [], ideal_client_size: '', target_industries: [],
+        first_call_offer: '', selling_point: '', clients_to_avoid: '',
+        calendly_link: '', available_hours: [], timezone: 'America/New_York',
+    });
+
+    const update = (key, val) => setData(prev => ({ ...prev, [key]: val }));
+
+    // Auth check
+    useEffect(() => {
+        (async () => {
+            try {
+                if (sb) {
+                    const { data: { session } } = await sb.auth.getSession();
+                    if (!session) { window.location.href = 'login.html'; return; }
+                    setUser(session.user);
+
+                    // Load existing onboarding data if any
+                    const { data: existing } = await sb.from('client_onboarding')
+                        .select('*').eq('user_id', session.user.id).single();
+                    if (existing?.completed) {
+                        window.location.href = 'dashboard.html';
+                        return;
+                    }
+                    if (existing) {
+                        setData(prev => ({
+                            ...prev,
+                            ...Object.fromEntries(
+                                Object.entries(existing).filter(([k, v]) =>
+                                    v !== null && k in prev
+                                )
+                            ),
+                        }));
+                    }
+                } else {
+                    setUser({ id: 'demo', email: 'demo@brokerpipeline.ai' });
+                }
+            } catch (err) {
+                console.warn('Init failed:', err);
+                setUser({ id: 'demo', email: 'demo@brokerpipeline.ai' });
+            }
+            setLoading(false);
+        })();
+    }, []);
+
+    // Save to Supabase
+    const saveData = async (completed = false) => {
+        if (!sb || !user) return;
+        const payload = {
+            user_id: user.id,
+            ...data,
+            completed,
+            updated_at: new Date().toISOString(),
+        };
+        await sb.from('client_onboarding').upsert(payload, { onConflict: 'user_id' });
+    };
+
+    const next = async () => {
+        if (step < 4) {
+            setSaving(true);
+            await saveData(false);
+            setSaving(false);
+            setStep(s => s + 1);
+        }
+    };
+
+    const prev = () => { if (step > 0) setStep(s => s - 1); };
+
+    const finish = async () => {
+        setSaving(true);
+        await saveData(true);
+        setSaving(false);
+        setStep(4);
+    };
+
+    // Validation per step
+    const canProceed = () => {
+        switch (step) {
+            case 0: return data.full_name && data.agency_name && data.years_in_insurance && data.state;
+            case 1: return data.insurance_types.length > 0 && data.ideal_client_size;
+            case 2: return data.first_call_offer;
+            case 3: {
+                const calendlyValid = !data.calendly_link || /^https?:\/\/(calendly\.com|cal\.com)\//.test(data.calendly_link);
+                return data.available_hours.length > 0 && data.timezone && calendlyValid;
+            }
+            default: return true;
+        }
+    };
+
+    if (loading) {
+        return (
+            <div className="h-screen flex items-center justify-center">
+                <div className="flex items-center gap-3 text-gray-400 text-sm">
+                    <div className="w-4 h-4 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: '#2563EB', borderTopColor: 'transparent' }} />
+                    Loading…
+                </div>
+            </div>
+        );
+    }
+
+    const STEPS = [
+        <Step1 data={data} update={update} />,
+        <Step2 data={data} update={update} />,
+        <Step3 data={data} update={update} />,
+        <Step4 data={data} update={update} />,
+        <Step5 data={data} />,
+    ];
+
+    return (
+        <div className="min-h-screen flex flex-col items-center px-4 py-8 relative overflow-hidden">
+            <div className="gradient-blur" style={{ top: '-200px', left: '50%', transform: 'translateX(-50%)' }} />
+
+            {/* Logo */}
+            <div className="mb-8 relative z-10">
+                <a href="index.html" className="text-xl font-bold">
+                    BrokerPipeline<span style={{ color: '#2563EB' }}>.ai</span>
+                </a>
+            </div>
+
+            {/* Card */}
+            <div
+                className="w-full max-w-lg relative z-10 rounded-2xl p-8"
+                style={{ background: '#0D0D0D', border: '1px solid #1A1A1A' }}
+            >
+                {/* Progress */}
+                {step < 4 && <ProgressBar step={step} total={5} />}
+
+                {/* Step content */}
+                <div key={step}>{STEPS[step]}</div>
+
+                {/* Nav buttons */}
+                {step < 4 && (
+                    <div className="flex items-center justify-between mt-8 pt-6" style={{ borderTop: '1px solid #1A1A1A' }}>
+                        {step > 0 ? (
+                            <button
+                                onClick={prev}
+                                className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors"
+                            >
+                                <Icon name="ArrowLeft" size={16} />
+                                Back
+                            </button>
+                        ) : <div />}
+
+                        <button
+                            onClick={step === 3 ? finish : next}
+                            disabled={!canProceed() || saving}
+                            className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-medium text-white transition-all"
+                            style={{
+                                background: canProceed() && !saving ? '#2563EB' : '#1A1A1A',
+                                opacity: canProceed() && !saving ? 1 : 0.5,
+                                cursor: canProceed() && !saving ? 'pointer' : 'not-allowed',
+                            }}
+                        >
+                            {saving ? 'Saving…' : step === 3 ? 'Finish Setup' : 'Continue'}
+                            {!saving && <Icon name="ArrowRight" size={16} color="#fff" />}
+                        </button>
+                    </div>
+                )}
+            </div>
+
+            {/* Footer */}
+            <p className="text-xs text-gray-600 mt-8 relative z-10">
+                <a href="index.html" className="hover:text-gray-400 transition-colors">← Back to home</a>
+            </p>
+        </div>
+    );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BrokerPipeline.ai — AI-Powered Sales Automation for Insurance Brokers</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        dark: '#0A0A0A',
+                        'dark-card': '#111111',
+                        'dark-border': '#1F1F1F',
+                        blue: {
+                            500: '#2563EB',
+                            600: '#1D4ED8',
+                            700: '#1E40AF',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body { background: #0A0A0A; color: #fff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+
+        .fade-in {
+            opacity: 0;
+            transform: translateY(30px);
+            transition: opacity 0.6s ease, transform 0.6s ease;
+        }
+        .fade-in.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .gradient-blur {
+            position: absolute;
+            width: 600px;
+            height: 600px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(37, 99, 235, 0.15) 0%, transparent 70%);
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        function useFadeIn() {
+            const ref = useRef(null);
+            useEffect(() => {
+                const observer = new IntersectionObserver(
+                    ([entry]) => {
+                        if (entry.isIntersecting) {
+                            entry.target.classList.add('visible');
+                        }
+                    },
+                    { threshold: 0.1 }
+                );
+                if (ref.current) observer.observe(ref.current);
+                return () => observer.disconnect();
+            }, []);
+            return ref;
+        }
+
+        function Icon({ name, size = 24, className = '' }) {
+            const ref = useRef(null);
+            useEffect(() => {
+                if (ref.current) {
+                    ref.current.innerHTML = '';
+                    const icon = lucide.createElement(lucide.icons[name]);
+                    icon.setAttribute('width', size);
+                    icon.setAttribute('height', size);
+                    if (className) icon.setAttribute('class', className);
+                    ref.current.appendChild(icon);
+                }
+            }, [name, size]);
+            return <span ref={ref} className={`inline-flex ${className}`}></span>;
+        }
+
+        function Navbar() {
+            const [scrolled, setScrolled] = useState(false);
+            useEffect(() => {
+                const handler = () => setScrolled(window.scrollY > 20);
+                window.addEventListener('scroll', handler);
+                return () => window.removeEventListener('scroll', handler);
+            }, []);
+
+            return (
+                <nav className={`fixed top-0 w-full z-50 transition-all duration-300 ${scrolled ? 'bg-dark/80 backdrop-blur-xl border-b border-dark-border' : ''}`}>
+                    <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+                        <a href="#" className="text-xl font-bold">
+                            BrokerPipeline<span className="text-blue-500">.ai</span>
+                        </a>
+                        <div className="hidden md:flex items-center gap-8">
+                            <a href="#how-it-works" className="text-sm text-gray-400 hover:text-white transition-colors">How It Works</a>
+                            <a href="#pricing" className="text-sm text-gray-400 hover:text-white transition-colors">Pricing</a>
+                            <a href="#cta" className="text-sm text-gray-400 hover:text-white transition-colors">Book a Call</a>
+                            <a href="login.html" className="text-sm text-gray-400 hover:text-white transition-colors">Sign In</a>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <a href="login.html" className="hidden md:inline-flex text-sm text-gray-400 hover:text-white transition-colors border border-dark-border hover:border-gray-600 px-4 py-2.5 rounded-full">
+                                Sign In
+                            </a>
+                            <a href="#cta" className="bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium px-5 py-2.5 rounded-full transition-colors">
+                                Book a Free Call
+                            </a>
+                        </div>
+                    </div>
+                </nav>
+            );
+        }
+
+        function Hero() {
+            const ref = useFadeIn();
+            return (
+                <section className="relative pt-32 pb-20 px-6 overflow-hidden">
+                    <div className="gradient-blur top-0 left-1/2 -translate-x-1/2 -translate-y-1/2"></div>
+                    <div ref={ref} className="fade-in max-w-4xl mx-auto text-center relative z-10">
+                        <div className="inline-flex items-center gap-2 bg-blue-500/10 border border-blue-500/20 rounded-full px-4 py-1.5 mb-8">
+                            <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                            <span className="text-sm text-blue-400">AI-Powered Insurance Growth</span>
+                        </div>
+                        <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold leading-tight mb-6 tracking-tight">
+                            We Book Qualified Insurance Appointments While You Sleep.
+                        </h1>
+                        <p className="text-lg md:text-xl text-gray-400 max-w-2xl mx-auto mb-10 leading-relaxed">
+                            BrokerPipeline.ai uses AI outreach + voice agents to find, qualify, and schedule meetings with your ideal clients — fully automated. You show up. We fill your calendar.
+                        </p>
+                        <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
+                            <a href="#cta" className="bg-blue-500 hover:bg-blue-600 text-white font-medium px-8 py-3.5 rounded-full transition-colors text-base">
+                                Book a Free Strategy Call
+                            </a>
+                            <a href="#how-it-works" className="border border-gray-700 hover:border-gray-500 text-white font-medium px-8 py-3.5 rounded-full transition-colors text-base">
+                                See How It Works
+                            </a>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 max-w-2xl mx-auto">
+                            <div className="text-center">
+                                <div className="text-2xl md:text-3xl font-bold text-white">23</div>
+                                <div className="text-sm text-gray-500">appointments/month</div>
+                            </div>
+                            <div className="text-center border-x border-dark-border sm:border-x">
+                                <div className="text-2xl md:text-3xl font-bold text-white">4.2x</div>
+                                <div className="text-sm text-gray-500">average ROI</div>
+                            </div>
+                            <div className="text-center">
+                                <div className="text-2xl md:text-3xl font-bold text-white">30-day</div>
+                                <div className="text-sm text-gray-500">guarantee</div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            );
+        }
+
+        function HowItWorks() {
+            const ref = useFadeIn();
+            const cards = [
+                { icon: 'Target', title: 'We Find Them', text: 'Our AI scans thousands of prospects daily and identifies insurance decision-makers actively looking for coverage.' },
+                { icon: 'Phone', title: 'We Call Them', text: 'Our voice agent calls, qualifies, and handles objections — then books meetings directly into your calendar.' },
+                { icon: 'DollarSign', title: 'You Close Them', text: "You get a notification: meeting booked. You show up, you close. That's it." },
+            ];
+            return (
+                <section id="how-it-works" className="py-24 px-6">
+                    <div ref={ref} className="fade-in max-w-6xl mx-auto">
+                        <div className="text-center mb-16">
+                            <h2 className="text-3xl md:text-4xl font-bold mb-4">How It Works</h2>
+                            <p className="text-gray-400 text-lg">Three steps to a full calendar</p>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            {cards.map((card, i) => (
+                                <div key={i} className="bg-dark-card border border-dark-border rounded-2xl p-8 hover:border-blue-500/30 transition-colors">
+                                    <div className="w-12 h-12 bg-blue-500/10 rounded-xl flex items-center justify-center mb-6">
+                                        <Icon name={card.icon} size={24} className="text-blue-500" />
+                                    </div>
+                                    <div className="text-xs text-gray-500 font-medium mb-2">STEP {i + 1}</div>
+                                    <h3 className="text-xl font-semibold mb-3">{card.title}</h3>
+                                    <p className="text-gray-400 leading-relaxed">{card.text}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </section>
+            );
+        }
+
+        function WhatsIncluded() {
+            const ref = useFadeIn();
+            const features = [
+                'AI-powered prospect research (2,000+/month)',
+                'Personalized email outreach sequences',
+                'AI voice agent follow-up calls',
+                'Automatic calendar booking',
+                'Weekly performance reports',
+                '30-day money-back guarantee',
+            ];
+            return (
+                <section className="py-24 px-6">
+                    <div ref={ref} className="fade-in max-w-4xl mx-auto">
+                        <div className="text-center mb-16">
+                            <h2 className="text-3xl md:text-4xl font-bold mb-4">What's Included</h2>
+                            <p className="text-gray-400 text-lg">Everything you need to fill your pipeline</p>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {features.map((f, i) => (
+                                <div key={i} className="flex items-center gap-3 bg-dark-card border border-dark-border rounded-xl px-6 py-4">
+                                    <Icon name="Check" size={20} className="text-blue-500 flex-shrink-0" />
+                                    <span className="text-gray-300">{f}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </section>
+            );
+        }
+
+        function Pricing() {
+            const ref = useFadeIn();
+            const plans = [
+                { name: 'Starter', price: '$1,497', features: '20 leads, email outreach only', popular: false },
+                { name: 'Growth', price: '$3,497', features: '60 leads, email + voice agent + booking', popular: true },
+                { name: 'Scale', price: '$6,997', features: '150+ leads, full multichannel, inbound 24/7', popular: false },
+            ];
+            return (
+                <section id="pricing" className="py-24 px-6">
+                    <div ref={ref} className="fade-in max-w-6xl mx-auto">
+                        <div className="text-center mb-16">
+                            <h2 className="text-3xl md:text-4xl font-bold mb-4">Simple Pricing</h2>
+                            <p className="text-gray-400 text-lg">Choose the plan that fits your growth goals</p>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            {plans.map((plan, i) => (
+                                <div key={i} className={`relative bg-dark-card border rounded-2xl p-8 ${plan.popular ? 'border-blue-500 shadow-lg shadow-blue-500/10' : 'border-dark-border'}`}>
+                                    {plan.popular && (
+                                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-blue-500 text-white text-xs font-bold px-3 py-1 rounded-full">
+                                            POPULAR
+                                        </div>
+                                    )}
+                                    <h3 className="text-lg font-semibold mb-2">{plan.name}</h3>
+                                    <div className="mb-4">
+                                        <span className="text-4xl font-bold">{plan.price}</span>
+                                        <span className="text-gray-500">/mo</span>
+                                    </div>
+                                    <p className="text-gray-400 mb-8">{plan.features}</p>
+                                    <a href="#cta" className={`block text-center py-3 rounded-full font-medium transition-colors ${plan.popular ? 'bg-blue-500 hover:bg-blue-600 text-white' : 'border border-gray-700 hover:border-gray-500 text-white'}`}>
+                                        Get Started
+                                    </a>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </section>
+            );
+        }
+
+        function Guarantee() {
+            const ref = useFadeIn();
+            return (
+                <section id="cta" className="py-24 px-6">
+                    <div ref={ref} className="fade-in max-w-4xl mx-auto">
+                        <div className="bg-dark-card border border-dark-border rounded-3xl p-12 md:p-16 text-center relative overflow-hidden">
+                            <div className="gradient-blur top-0 right-0 translate-x-1/2 -translate-y-1/2"></div>
+                            <div className="relative z-10">
+                                <Icon name="Shield" size={40} className="text-blue-500 mx-auto mb-6" />
+                                <h2 className="text-3xl md:text-4xl font-bold mb-4 leading-tight">
+                                    15 Booked Appointments in 30 Days — Or Your Money Back.
+                                </h2>
+                                <p className="text-gray-400 text-lg max-w-2xl mx-auto mb-10 leading-relaxed">
+                                    We're so confident in our system that if we don't deliver 15 qualified meetings in your first month, you get a full refund. No questions asked.
+                                </p>
+                                <a href="#" className="inline-flex bg-blue-500 hover:bg-blue-600 text-white font-medium px-8 py-3.5 rounded-full transition-colors text-base">
+                                    Get Started Risk-Free
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            );
+        }
+
+        function Footer() {
+            return (
+                <footer className="border-t border-dark-border py-12 px-6">
+                    <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
+                        <div>
+                            <div className="text-lg font-bold mb-1">
+                                BrokerPipeline<span className="text-blue-500">.ai</span>
+                            </div>
+                            <div className="text-sm text-gray-500">Your AI Sales Team</div>
+                        </div>
+                        <div className="flex items-center gap-6 text-sm text-gray-500">
+                            <a href="#" className="hover:text-white transition-colors">Privacy Policy</a>
+                            <a href="#" className="hover:text-white transition-colors">Terms</a>
+                            <span>hello@brokerpipeline.ai</span>
+                        </div>
+                        <div className="text-sm text-gray-600">
+                            &copy; 2026 BrokerPipeline.ai
+                        </div>
+                    </div>
+                </footer>
+            );
+        }
+
+        function App() {
+            return (
+                <div className="min-h-screen">
+                    <Navbar />
+                    <Hero />
+                    <HowItWorks />
+                    <WhatsIncluded />
+                    <Pricing />
+                    <Guarantee />
+                    <Footer />
+                </div>
+            );
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>

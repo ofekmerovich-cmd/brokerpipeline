@@ -1,0 +1,1419 @@
+<!DOCTYPE html>
+<!--
+  BrokerPipeline.ai — Client Dashboard
+  ──────────────────────────────────────
+  Supabase tables required:
+
+  CREATE TABLE leads (
+    id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id      uuid REFERENCES auth.users(id),
+    name         text, company text, email text, phone text,
+    specialty    text, score integer,
+    status       text DEFAULT 'New',
+    date_added   date DEFAULT CURRENT_DATE
+  );
+
+  CREATE TABLE appointments (
+    id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id          uuid REFERENCES auth.users(id),
+    prospect_name    text, company text,
+    meeting_datetime timestamptz,
+    specialty        text,
+    status           text DEFAULT 'Upcoming',
+    notes            text
+  );
+
+  CREATE TABLE reports (
+    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id         uuid REFERENCES auth.users(id),
+    week            text,
+    leads_added     integer,
+    emails_sent     integer,
+    replies         integer,
+    appointments    integer,
+    conversion_rate numeric
+  );
+
+  CREATE TABLE daily_leads (
+    id      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id uuid REFERENCES auth.users(id),
+    date    date,
+    count   integer
+  );
+
+  Enable Row Level Security and add policies so users only see their own rows.
+-->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard — BrokerPipeline.ai</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Recharts needs prop-types + React globally -->
+    <script src="https://unpkg.com/prop-types@15/prop-types.min.js"></script>
+    <script src="https://unpkg.com/recharts@2/umd/Recharts.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body, #root { height: 100%; }
+        body {
+            background: #0A0A0A;
+            color: #fff;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #2A2A2A; border-radius: 99px; }
+        /* Sidebar slide */
+        .sidebar { transition: transform 0.25s cubic-bezier(.4,0,.2,1); }
+        /* Focus ring replacement */
+        input:focus, textarea:focus, select:focus { outline: none; }
+        /* Table row hover */
+        .tbl-row:hover { background: rgba(255,255,255,0.025); }
+    </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+// ── Recharts destructure (graceful fallback if CDN fails) ─────────────────────
+const _Recharts = (typeof Recharts !== 'undefined') ? Recharts : {};
+const {
+    LineChart = () => null, Line = () => null,
+    BarChart = () => null, Bar = () => null,
+    XAxis = () => null, YAxis = () => null,
+    CartesianGrid = () => null, Tooltip = () => null,
+    Area = () => null, AreaChart = () => null,
+} = _Recharts;
+
+// ResponsiveContainer from the Recharts UMD bundle doesn't measure correctly
+// in a CDN + Babel standalone setup. This hook measures the parent instead.
+function useContainerSize() {
+    const ref = useRef(null);
+    const [size, setSize] = useState({ width: 0, height: 0 });
+    useEffect(() => {
+        if (!ref.current) return;
+        const update = () => {
+            const { width, height } = ref.current.getBoundingClientRect();
+            setSize({ width: Math.round(width), height: Math.round(height) });
+        };
+        update();
+        const ro = new ResizeObserver(update);
+        ro.observe(ref.current);
+        return () => ro.disconnect();
+    }, []);
+    return [ref, size];
+}
+
+function ChartContainer({ data }) {
+    const [containerRef, { width, height }] = useContainerSize();
+    return (
+        <div ref={containerRef} style={{ height: 240 }}>
+            {width > 0 && (
+                <AreaChart width={width} height={height} data={data} margin={{ top: 4, right: 8, left: -28, bottom: 0 }}>
+                    <defs>
+                        <linearGradient id="blueGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%"  stopColor="#2563EB" stopOpacity={0.4} />
+                            <stop offset="95%" stopColor="#2563EB" stopOpacity={0.02} />
+                        </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1A1A1A" vertical={false} />
+                    <XAxis
+                        dataKey="date"
+                        tick={{ fill: '#555', fontSize: 11 }}
+                        tickLine={false} axisLine={false}
+                        interval={4}
+                    />
+                    <YAxis
+                        tick={{ fill: '#555', fontSize: 11 }}
+                        tickLine={false} axisLine={false}
+                    />
+                    <Tooltip
+                        contentStyle={{
+                            background: '#111', border: '1px solid #1F1F1F',
+                            borderRadius: 10, color: '#fff', fontSize: 12,
+                        }}
+                        cursor={{ stroke: '#2563EB', strokeWidth: 1, strokeDasharray: '4 4' }}
+                    />
+                    <Area
+                        type="monotone" dataKey="leads"
+                        stroke="#2563EB" strokeWidth={2.5}
+                        fill="url(#blueGrad)"
+                        dot={false}
+                        isAnimationActive={false}
+                        activeDot={{ r: 4, fill: '#2563EB', stroke: '#0A0A0A', strokeWidth: 2 }}
+                    />
+                </AreaChart>
+            )}
+        </div>
+    );
+}
+
+// ── Supabase config ───────────────────────────────────────────────────────────
+const SUPABASE_URL      = 'https://glokxezbcrelrndcbhhs.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdsb2t4ZXpiY3JlbHJuZGNiaGhzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5NzMxNzEsImV4cCI6MjA5MzU0OTE3MX0.imnH5pmrXpiKz18fzxyF78b23luNNmu9izM3yBSlbQ4';
+
+let sb = null;
+try {
+    if (typeof supabase !== 'undefined' && supabase.createClient) {
+        sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    }
+} catch(e) { console.warn('Supabase init failed:', e); }
+
+// ── Mock data ─────────────────────────────────────────────────────────────────
+const MOCK_LEADS = [
+    { id:1,  name:'Michael Torres',   company:'Torres Logistics',    email:'michael@torreslogistics.com', phone:'(555) 201-4832', specialty:'Commercial',  score:9, status:'Booked',    date_added:'2026-05-01' },
+    { id:2,  name:'Sarah Kim',        company:'Kim & Associates',    email:'sarah@kimassoc.com',          phone:'(555) 334-9012', specialty:'Life',        score:7, status:'Replied',   date_added:'2026-05-02' },
+    { id:3,  name:'James Patel',      company:'Patel Properties',    email:'james@patelprops.com',        phone:'(555) 445-7623', specialty:'Commercial',  score:8, status:'Contacted', date_added:'2026-05-03' },
+    { id:4,  name:'Linda Chen',       company:'Chen Medical Group',  email:'linda@chenmedical.com',       phone:'(555) 556-3401', specialty:'Health',      score:6, status:'New',       date_added:'2026-05-03' },
+    { id:5,  name:'Robert Nash',      company:'Nash Construction',   email:'robert@nashconst.com',        phone:'(555) 667-8901', specialty:'Commercial',  score:9, status:'Booked',    date_added:'2026-05-04' },
+    { id:6,  name:'Emily Watson',     company:'Watson Retail',       email:'emily@watsonretail.com',      phone:'(555) 778-2345', specialty:'Commercial',  score:5, status:'New',       date_added:'2026-05-04' },
+    { id:7,  name:'David Park',       company:'Park Tech Solutions', email:'david@parktech.com',          phone:'(555) 889-6789', specialty:'Cyber',       score:8, status:'Contacted', date_added:'2026-05-05' },
+    { id:8,  name:'Angela Foster',    company:'Foster Accounting',   email:'angela@fosteracc.com',        phone:'(555) 990-1234', specialty:'Life',        score:7, status:'Replied',   date_added:'2026-05-05' },
+    { id:9,  name:'Chris Morgan',     company:'Morgan Auto Group',   email:'chris@morganauto.com',        phone:'(555) 112-5678', specialty:'Commercial',  score:9, status:'Booked',    date_added:'2026-05-06' },
+    { id:10, name:'Jessica Lee',      company:'Lee Restaurants',     email:'jessica@leerest.com',         phone:'(555) 223-9012', specialty:'Commercial',  score:6, status:'New',       date_added:'2026-05-06' },
+    { id:11, name:'Tom Bradley',      company:'Bradley Farms',       email:'tom@bradleyfarms.com',        phone:'(555) 334-3456', specialty:'Agriculture', score:8, status:'Contacted', date_added:'2026-05-07' },
+    { id:12, name:'Maria Gonzalez',   company:'Gonzalez Law',        email:'maria@gonzalezlaw.com',       phone:'(555) 445-7890', specialty:'Professional',score:7, status:'Replied',   date_added:'2026-05-07' },
+    { id:13, name:'Kevin Huang',      company:'Huang Imports',       email:'kevin@huangimports.com',      phone:'(555) 556-2341', specialty:'Commercial',  score:6, status:'New',       date_added:'2026-05-08' },
+    { id:14, name:'Tanya Brooks',     company:'Brooks Wellness',     email:'tanya@brookswellness.com',    phone:'(555) 667-5678', specialty:'Health',      score:8, status:'Contacted', date_added:'2026-05-08' },
+    { id:15, name:'Victor Reyes',     company:'Reyes Manufacturing', email:'victor@reyesmfg.com',         phone:'(555) 778-9012', specialty:'Commercial',  score:9, status:'Booked',    date_added:'2026-05-09' },
+];
+
+const MOCK_APPOINTMENTS = [
+    { id:1, prospect_name:'Michael Torres', company:'Torres Logistics',    meeting_datetime:'2026-05-10T14:00:00', specialty:'Commercial',  status:'Upcoming',  notes:'Needs $2M general liability. Fleet of 12 trucks. Very motivated.' },
+    { id:2, prospect_name:'Robert Nash',    company:'Nash Construction',   meeting_datetime:'2026-05-08T10:00:00', specialty:'Commercial',  status:'Completed', notes:'Closed! Workers comp + GL bundle. Send policy docs by Friday.' },
+    { id:3, prospect_name:'Chris Morgan',   company:'Morgan Auto Group',   meeting_datetime:'2026-05-12T15:30:00', specialty:'Commercial',  status:'Upcoming',  notes:'3 dealership locations. Looking for comprehensive commercial package.' },
+    { id:4, prospect_name:'Sarah Kim',      company:'Kim & Associates',    meeting_datetime:'2026-05-03T11:00:00', specialty:'Life',        status:'No-show',   notes:'Missed call. Rescheduled for next week via email.' },
+    { id:5, prospect_name:'Angela Foster',  company:'Foster Accounting',   meeting_datetime:'2026-05-15T09:00:00', specialty:'Life',        status:'Upcoming',  notes:'Key-person life insurance for 3 partners. Budget ~$15k/yr.' },
+    { id:6, prospect_name:'Victor Reyes',   company:'Reyes Manufacturing', meeting_datetime:'2026-05-07T13:00:00', specialty:'Commercial',  status:'Completed', notes:'Quoted workers comp. Follow up on umbrella policy next month.' },
+];
+
+const MOCK_REPORTS = [
+    { id:1, week:'Apr 7 – Apr 13',  leads_added:18, emails_sent:142, replies:21, appointments:4, conversion_rate:22.2 },
+    { id:2, week:'Apr 14 – Apr 20', leads_added:22, emails_sent:168, replies:28, appointments:5, conversion_rate:25.0 },
+    { id:3, week:'Apr 21 – Apr 27', leads_added:19, emails_sent:155, replies:24, appointments:6, conversion_rate:31.6 },
+    { id:4, week:'Apr 28 – May 4',  leads_added:25, emails_sent:192, replies:31, appointments:7, conversion_rate:28.0 },
+    { id:5, week:'May 5 – May 11',  leads_added:12, emails_sent:97,  replies:16, appointments:3, conversion_rate:25.0 },
+];
+
+// 30 days of daily lead counts
+const MOCK_DAILY = Array.from({ length: 30 }, (_, i) => {
+    const d = new Date(2026, 3, 6 + i);
+    return {
+        date: `${d.getMonth()+1}/${d.getDate()}`,
+        leads: Math.floor(Math.sin(i / 4) * 3 + Math.random() * 4 + 3),
+    };
+});
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function downloadCSV(data, filename) {
+    if (!data.length) return;
+    const headers = Object.keys(data[0]);
+    const rows = data.map(row =>
+        headers.map(h => `"${String(row[h] ?? '').replace(/"/g,'""')}"`).join(',')
+    );
+    const csv = [headers.join(','), ...rows].join('\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    Object.assign(document.createElement('a'), { href: url, download: filename }).click();
+    URL.revokeObjectURL(url);
+}
+
+function fmtDateTime(dt) {
+    return new Date(dt).toLocaleString('en-US', {
+        month: 'short', day: 'numeric', year: 'numeric',
+        hour: 'numeric', minute: '2-digit', hour12: true,
+    });
+}
+
+// ── Icon ──────────────────────────────────────────────────────────────────────
+function Icon({ name, size = 18, color = 'currentColor', className = '' }) {
+    const ref = useRef(null);
+    useEffect(() => {
+        if (!ref.current || !lucide?.icons?.[name]) return;
+        ref.current.innerHTML = '';
+        const svg = lucide.createElement(lucide.icons[name]);
+        svg.setAttribute('width', size);
+        svg.setAttribute('height', size);
+        svg.setAttribute('stroke', color);
+        svg.style.display = 'block';
+        svg.style.flexShrink = '0';
+        ref.current.appendChild(svg);
+    }, [name, size, color]);
+    return <span ref={ref} className={`inline-flex items-center ${className}`} />;
+}
+
+// ── Status badge ──────────────────────────────────────────────────────────────
+const BADGE = {
+    New:       'bg-blue-500/15 text-blue-400 border-blue-500/25',
+    Contacted: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/25',
+    Replied:   'bg-purple-500/15 text-purple-400 border-purple-500/25',
+    Booked:    'bg-green-500/15 text-green-400 border-green-500/25',
+    Upcoming:  'bg-blue-500/15 text-blue-400 border-blue-500/25',
+    Completed: 'bg-green-500/15 text-green-400 border-green-500/25',
+    'No-show': 'bg-red-500/15 text-red-400 border-red-500/25',
+};
+function Badge({ status }) {
+    return (
+        <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium border ${BADGE[status] || 'bg-gray-500/15 text-gray-400 border-gray-500/25'}`}>
+            {status}
+        </span>
+    );
+}
+
+// ── Sidebar ───────────────────────────────────────────────────────────────────
+const NAV = [
+    { id: 'overview',      label: 'Overview',       icon: 'LayoutDashboard' },
+    { id: 'leads',         label: 'My Leads',       icon: 'Users' },
+    { id: 'appointments',  label: 'Appointments',   icon: 'CalendarDays' },
+    { id: 'reports',       label: 'Reports',        icon: 'BarChart2' },
+    { id: 'roi',           label: 'ROI Calculator',  icon: 'Calculator' },
+    { id: 'settings',      label: 'Settings',       icon: 'Settings' },
+];
+
+function Sidebar({ page, setPage, open, setOpen }) {
+    return (
+        <>
+            {open && (
+                <div
+                    className="fixed inset-0 bg-black/60 z-20 md:hidden"
+                    onClick={() => setOpen(false)}
+                />
+            )}
+            <aside
+                className={`sidebar fixed inset-y-0 left-0 z-30 w-60 flex flex-col
+                    ${open ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}
+                style={{ background: '#0D0D0D', borderRight: '1px solid #1A1A1A' }}
+            >
+                {/* Logo */}
+                <div className="h-14 flex items-center px-5" style={{ borderBottom: '1px solid #1A1A1A' }}>
+                    <a href="index.html" className="text-base font-bold">
+                        BrokerPipeline<span style={{ color: '#2563EB' }}>.ai</span>
+                    </a>
+                </div>
+
+                {/* Nav */}
+                <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
+                    {NAV.map(item => {
+                        const active = page === item.id;
+                        return (
+                            <button
+                                key={item.id}
+                                onClick={() => { setPage(item.id); setOpen(false); }}
+                                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-left transition-colors"
+                                style={{
+                                    background: active ? 'rgba(37,99,235,0.1)' : 'transparent',
+                                    color: active ? '#2563EB' : '#9CA3AF',
+                                }}
+                                onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; e.currentTarget.style.color = active ? '#2563EB' : '#fff'; }}
+                                onMouseLeave={e => { e.currentTarget.style.background = active ? 'rgba(37,99,235,0.1)' : 'transparent'; e.currentTarget.style.color = active ? '#2563EB' : '#9CA3AF'; }}
+                            >
+                                <Icon name={item.icon} size={16} color={active ? '#2563EB' : 'currentColor'} />
+                                {item.label}
+                            </button>
+                        );
+                    })}
+                </nav>
+
+                <div className="px-4 py-4" style={{ borderTop: '1px solid #1A1A1A' }}>
+                    <p className="text-xs text-center" style={{ color: '#333' }}>© 2026 BrokerPipeline.ai</p>
+                </div>
+            </aside>
+        </>
+    );
+}
+
+// ── Top bar ───────────────────────────────────────────────────────────────────
+function TopBar({ user, open, setOpen }) {
+    const [notif, setNotif] = useState(false);
+    const name = user?.email?.split('@')[0] ?? 'there';
+    const initial = name[0]?.toUpperCase() ?? 'B';
+
+    return (
+        <header
+            className="h-14 flex items-center justify-between px-5 shrink-0"
+            style={{ borderBottom: '1px solid #1A1A1A', background: '#0A0A0A' }}
+        >
+            <div className="flex items-center gap-3">
+                <button
+                    onClick={() => setOpen(!open)}
+                    className="md:hidden text-gray-400 hover:text-white transition-colors"
+                >
+                    <Icon name="Menu" size={20} />
+                </button>
+                <span className="text-sm text-gray-400">
+                    Welcome back,{' '}
+                    <span className="text-white font-medium capitalize">{name}</span>
+                </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+                {/* Bell */}
+                <div className="relative">
+                    <button
+                        onClick={() => setNotif(v => !v)}
+                        className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-white transition-colors relative"
+                        style={{ border: '1px solid #1A1A1A' }}
+                    >
+                        <Icon name="Bell" size={16} />
+                        <span
+                            className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full"
+                            style={{ background: '#2563EB' }}
+                        />
+                    </button>
+
+                    {notif && (
+                        <div
+                            className="absolute right-0 top-10 w-72 rounded-xl shadow-2xl z-50 overflow-hidden"
+                            style={{ background: '#111', border: '1px solid #1F1F1F' }}
+                        >
+                            <div className="px-4 py-3 text-sm font-medium" style={{ borderBottom: '1px solid #1F1F1F' }}>
+                                Notifications
+                            </div>
+                            {[
+                                { icon: 'CalendarDays', text: 'New appointment: Michael Torres', time: '2m ago' },
+                                { icon: 'Users',       text: '12 new leads added today',         time: '1h ago' },
+                                { icon: 'TrendingUp',  text: 'Weekly report is ready',           time: '3h ago' },
+                            ].map((n, i) => (
+                                <div key={i} className="flex items-start gap-3 px-3 py-2.5 hover:bg-white/5 cursor-pointer transition-colors">
+                                    <div
+                                        className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                                        style={{ background: 'rgba(37,99,235,0.1)' }}
+                                    >
+                                        <Icon name={n.icon} size={14} color="#2563EB" />
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-gray-300">{n.text}</p>
+                                        <p className="text-xs mt-0.5" style={{ color: '#444' }}>{n.time}</p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                {/* Avatar */}
+                <div
+                    className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
+                    style={{ background: '#2563EB' }}
+                >
+                    {initial}
+                </div>
+            </div>
+        </header>
+    );
+}
+
+// ── Stat card ─────────────────────────────────────────────────────────────────
+function StatCard({ label, value, icon, iconColor, iconBg, sub }) {
+    return (
+        <div
+            className="rounded-xl p-5"
+            style={{ background: '#111', border: '1px solid #1A1A1A' }}
+        >
+            <div className="flex items-center justify-between mb-4">
+                <span className="text-xs text-gray-500">{label}</span>
+                <div
+                    className="w-8 h-8 rounded-lg flex items-center justify-center"
+                    style={{ background: iconBg }}
+                >
+                    <Icon name={icon} size={16} color={iconColor} />
+                </div>
+            </div>
+            <div className="text-2xl font-bold mb-1">{value}</div>
+            {sub && <p className="text-xs" style={{ color: '#22C55E' }}>{sub}</p>}
+        </div>
+    );
+}
+
+// ── Overview page ─────────────────────────────────────────────────────────────
+function OverviewPage({ leads, reports, daily }) {
+    const booked   = leads.filter(l => l.status === 'Booked').length;
+    const emails   = reports.reduce((s, r) => s + r.emails_sent, 0);
+    const avgReply = reports.length
+        ? (reports.reduce((s, r) => s + r.conversion_rate, 0) / reports.length).toFixed(1)
+        : 0;
+
+    return (
+        <div className="space-y-6">
+            <div>
+                <h1 className="text-lg font-semibold">Overview</h1>
+                <p className="text-sm text-gray-500 mt-0.5">Your pipeline at a glance</p>
+            </div>
+
+            {/* Stat cards */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <StatCard label="Total Leads This Month" value={leads.length}
+                    icon="Users"       iconColor="#2563EB" iconBg="rgba(37,99,235,0.12)"
+                    sub="↑ +8 from last month" />
+                <StatCard label="Booked Appointments"   value={booked}
+                    icon="CalendarCheck" iconColor="#22C55E" iconBg="rgba(34,197,94,0.12)"
+                    sub="↑ +2 this week" />
+                <StatCard label="Emails Sent"           value={emails.toLocaleString()}
+                    icon="Mail"        iconColor="#9CA3AF" iconBg="rgba(156,163,175,0.12)" />
+                <StatCard label="Reply Rate"            value={`${avgReply}%`}
+                    icon="TrendingUp"  iconColor="#EAB308" iconBg="rgba(234,179,8,0.12)"
+                    sub="↑ +3.2% vs last month" />
+            </div>
+
+            {/* Chart */}
+            <div
+                className="rounded-xl p-5"
+                style={{ background: '#111', border: '1px solid #1A1A1A' }}
+            >
+                <div className="mb-5">
+                    <h2 className="text-sm font-medium">Leads Per Day</h2>
+                    <p className="text-xs text-gray-500 mt-0.5">Last 30 days</p>
+                </div>
+                <ChartContainer data={daily} />
+            </div>
+        </div>
+    );
+}
+
+// ── Leads page ────────────────────────────────────────────────────────────────
+function LeadsPage({ leads }) {
+    const [search, setSearch] = useState('');
+    const [statusFilter, setStatusFilter] = useState('All');
+
+    const filtered = leads.filter(l => {
+        const q = search.toLowerCase();
+        const matchText = !q ||
+            l.name.toLowerCase().includes(q) ||
+            l.company.toLowerCase().includes(q) ||
+            l.email.toLowerCase().includes(q);
+        const matchStatus = statusFilter === 'All' || l.status === statusFilter;
+        return matchText && matchStatus;
+    });
+
+    return (
+        <div className="space-y-5">
+            {/* Header */}
+            <div className="flex items-center justify-between">
+                <div>
+                    <h1 className="text-lg font-semibold">My Leads</h1>
+                    <p className="text-sm text-gray-500 mt-0.5">{leads.length} total this month</p>
+                </div>
+                <button
+                    onClick={() => downloadCSV(filtered, 'leads.csv')}
+                    className="flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm text-gray-300 hover:text-white transition-colors"
+                    style={{ border: '1px solid #1A1A1A' }}
+                    onMouseEnter={e => e.currentTarget.style.borderColor = '#333'}
+                    onMouseLeave={e => e.currentTarget.style.borderColor = '#1A1A1A'}
+                >
+                    <Icon name="Download" size={15} />
+                    Export CSV
+                </button>
+            </div>
+
+            {/* Filters */}
+            <div className="flex flex-col sm:flex-row gap-3">
+                <div className="relative flex-1">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none">
+                        <Icon name="Search" size={15} />
+                    </span>
+                    <input
+                        type="text"
+                        placeholder="Search by name, company, email…"
+                        value={search}
+                        onChange={e => setSearch(e.target.value)}
+                        className="w-full rounded-lg pl-9 pr-4 py-2.5 text-sm text-white placeholder-gray-600 transition-colors"
+                        style={{ background: '#111', border: '1px solid #1A1A1A' }}
+                        onFocus={e => e.target.style.borderColor = '#2563EB'}
+                        onBlur={e => e.target.style.borderColor = '#1A1A1A'}
+                    />
+                </div>
+                <select
+                    value={statusFilter}
+                    onChange={e => setStatusFilter(e.target.value)}
+                    className="rounded-lg px-3 py-2.5 text-sm text-gray-300 transition-colors"
+                    style={{ background: '#111', border: '1px solid #1A1A1A', color: '#ccc' }}
+                    onFocus={e => e.target.style.borderColor = '#2563EB'}
+                    onBlur={e => e.target.style.borderColor = '#1A1A1A'}
+                >
+                    {['All','New','Contacted','Replied','Booked'].map(s =>
+                        <option key={s} value={s} style={{ background: '#111' }}>{s}</option>
+                    )}
+                </select>
+            </div>
+
+            {/* Table */}
+            <div
+                className="rounded-xl overflow-hidden"
+                style={{ border: '1px solid #1A1A1A' }}
+            >
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                        <thead>
+                            <tr style={{ borderBottom: '1px solid #1A1A1A', background: '#0D0D0D' }}>
+                                {['Name','Company','Email','Phone','Specialty','Score','Status','Date Added'].map(h => (
+                                    <th key={h} className="px-4 py-3 text-left text-xs font-medium whitespace-nowrap"
+                                        style={{ color: '#555', letterSpacing: '0.05em' }}>
+                                        {h}
+                                    </th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {filtered.length === 0 ? (
+                                <tr>
+                                    <td colSpan={8} className="px-4 py-10 text-center text-sm text-gray-500">
+                                        No leads match your search
+                                    </td>
+                                </tr>
+                            ) : filtered.map((l, i) => (
+                                <tr key={l.id} className="tbl-row transition-colors"
+                                    style={{ borderBottom: i < filtered.length - 1 ? '1px solid #141414' : 'none', background: '#111' }}>
+                                    <td className="px-4 py-3 font-medium whitespace-nowrap">{l.name}</td>
+                                    <td className="px-4 py-3 whitespace-nowrap" style={{ color: '#9CA3AF' }}>{l.company}</td>
+                                    <td className="px-4 py-3 whitespace-nowrap" style={{ color: '#9CA3AF' }}>{l.email}</td>
+                                    <td className="px-4 py-3 whitespace-nowrap" style={{ color: '#9CA3AF' }}>{l.phone}</td>
+                                    <td className="px-4 py-3 whitespace-nowrap" style={{ color: '#9CA3AF' }}>{l.specialty}</td>
+                                    <td className="px-4 py-3 whitespace-nowrap font-semibold"
+                                        style={{ color: l.score >= 8 ? '#22C55E' : l.score >= 6 ? '#EAB308' : '#EF4444' }}>
+                                        {l.score}/10
+                                    </td>
+                                    <td className="px-4 py-3 whitespace-nowrap"><Badge status={l.status} /></td>
+                                    <td className="px-4 py-3 whitespace-nowrap" style={{ color: '#9CA3AF' }}>{l.date_added}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <p className="text-xs" style={{ color: '#444' }}>
+                Showing {filtered.length} of {leads.length} leads
+            </p>
+        </div>
+    );
+}
+
+// ── Appointments page ─────────────────────────────────────────────────────────
+function AppointmentsPage({ appointments: init }) {
+    const [appts, setAppts] = useState(init);
+    const [editing, setEditing] = useState({});
+    const [drafts, setDrafts]   = useState({});
+
+    const saveNotes = async (id) => {
+        const notes = drafts[id] ?? '';
+        setAppts(prev => prev.map(a => a.id === id ? { ...a, notes } : a));
+        setEditing(prev => ({ ...prev, [id]: false }));
+        if (sb) await sb.from('appointments').update({ notes }).eq('id', id);
+    };
+
+    const upcoming  = appts.filter(a => a.status === 'Upcoming').length;
+
+    return (
+        <div className="space-y-5">
+            <div>
+                <h1 className="text-lg font-semibold">Appointments</h1>
+                <p className="text-sm text-gray-500 mt-0.5">
+                    {upcoming} upcoming meeting{upcoming !== 1 ? 's' : ''}
+                </p>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {appts.map(a => (
+                    <div
+                        key={a.id}
+                        className="rounded-xl p-5 transition-colors"
+                        style={{ background: '#111', border: '1px solid #1A1A1A' }}
+                    >
+                        {/* Header */}
+                        <div className="flex items-start justify-between mb-4">
+                            <div>
+                                <h3 className="font-medium">{a.prospect_name}</h3>
+                                <p className="text-sm mt-0.5" style={{ color: '#9CA3AF' }}>{a.company}</p>
+                            </div>
+                            <Badge status={a.status} />
+                        </div>
+
+                        {/* Meta */}
+                        <div className="space-y-2 mb-4">
+                            <div className="flex items-center gap-2 text-sm" style={{ color: '#9CA3AF' }}>
+                                <Icon name="CalendarDays" size={14} />
+                                {fmtDateTime(a.meeting_datetime)}
+                            </div>
+                            <div className="flex items-center gap-2 text-sm" style={{ color: '#9CA3AF' }}>
+                                <Icon name="Tag" size={14} />
+                                {a.specialty}
+                            </div>
+                        </div>
+
+                        {/* Notes */}
+                        <div>
+                            <div className="flex items-center justify-between mb-1.5">
+                                <span className="text-xs font-medium" style={{ color: '#555', letterSpacing: '0.06em' }}>NOTES</span>
+                                <button
+                                    onClick={() => {
+                                        if (editing[a.id]) {
+                                            setEditing(prev => ({ ...prev, [a.id]: false }));
+                                        } else {
+                                            setDrafts(prev => ({ ...prev, [a.id]: a.notes ?? '' }));
+                                            setEditing(prev => ({ ...prev, [a.id]: true }));
+                                        }
+                                    }}
+                                    className="text-xs transition-colors"
+                                    style={{ color: editing[a.id] ? '#9CA3AF' : '#2563EB' }}
+                                >
+                                    {editing[a.id] ? 'Cancel' : 'Edit'}
+                                </button>
+                            </div>
+
+                            {editing[a.id] ? (
+                                <div>
+                                    <textarea
+                                        rows={3}
+                                        value={drafts[a.id] ?? ''}
+                                        onChange={e => setDrafts(prev => ({ ...prev, [a.id]: e.target.value }))}
+                                        className="w-full rounded-lg px-3 py-2.5 text-sm resize-none transition-colors"
+                                        style={{ background: '#0A0A0A', border: '1px solid #2563EB', color: '#e5e7eb' }}
+                                    />
+                                    <button
+                                        onClick={() => saveNotes(a.id)}
+                                        className="mt-2 text-xs px-3 py-1.5 rounded-lg font-medium text-white transition-colors"
+                                        style={{ background: '#2563EB' }}
+                                        onMouseEnter={e => e.currentTarget.style.background = '#1D4ED8'}
+                                        onMouseLeave={e => e.currentTarget.style.background = '#2563EB'}
+                                    >
+                                        Save Notes
+                                    </button>
+                                </div>
+                            ) : (
+                                <p
+                                    className="text-sm rounded-lg px-3 py-2.5"
+                                    style={{ background: '#0D0D0D', color: a.notes ? '#9CA3AF' : '#444', fontStyle: a.notes ? 'normal' : 'italic' }}
+                                >
+                                    {a.notes || 'No notes yet'}
+                                </p>
+                            )}
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+// ── Reports page (enhanced) ──────────────────────────────────────────────────
+function ReportsPage({ reports, appointments }) {
+    const [range, setRange] = useState('month');
+
+    const totalLeads = reports.reduce((s, r) => s + r.leads_added, 0);
+    const totalEmails = reports.reduce((s, r) => s + r.emails_sent, 0);
+    const totalAppts = reports.reduce((s, r) => s + r.appointments, 0);
+    const pipelineValue = totalAppts * 8000;
+
+    const bestWeekIdx = reports.length > 0 ? reports.reduce((best, r, i) => r.appointments > reports[best].appointments ? i : best, 0) : -1;
+    const worstWeekIdx = reports.length > 0 ? reports.reduce((worst, r, i) => r.appointments < reports[worst].appointments ? i : worst, 0) : -1;
+
+    const chartData = reports.map(r => ({
+        week: r.week.split(' – ')[0].replace(/\s+/g,' ').slice(0,6),
+        leads: r.leads_added,
+        emails: r.emails_sent,
+        appointments: r.appointments,
+    }));
+
+    const [chartRef, { width: chartW }] = useContainerSize();
+
+    const exportCSVReport = () => {
+        const header = 'Week,Leads Added,Emails Sent,Opens,Replies,Appointments,Conversion Rate\n';
+        const rows = reports.map(r =>
+            `"${r.week}",${r.leads_added},${r.emails_sent},${Math.round(r.emails_sent*0.38)},${r.replies},${r.appointments},${r.conversion_rate}%`
+        ).join('\n');
+        const blob = new Blob([header + rows], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        Object.assign(document.createElement('a'), { href: url, download: 'BrokerPipeline_Report.csv' }).click();
+        URL.revokeObjectURL(url);
+    };
+
+    const exportPDF = () => {
+        const w = window.open('', '_blank');
+        const html = `<html><head><title>BrokerPipeline Report</title><style>
+            body{font-family:system-ui;padding:40px;color:#333}
+            h1{color:#2563EB}table{width:100%;border-collapse:collapse;margin:20px 0}
+            th,td{padding:10px;border:1px solid #ddd;text-align:left}th{background:#f5f5f5}
+            .stat{display:inline-block;padding:15px 25px;margin:5px;background:#f8f8f8;border-radius:8px}
+            .stat strong{display:block;font-size:24px;color:#2563EB}
+        </style></head><body>
+        <h1>BrokerPipeline.ai Report</h1>
+        <p style="color:#666">Generated: ${new Date().toLocaleDateString()}</p>
+        <div>${[
+            {l:'Leads Delivered',v:totalLeads},{l:'Emails Sent',v:totalEmails},
+            {l:'Appointments Booked',v:totalAppts},{l:'Pipeline Value',v:'$'+pipelineValue.toLocaleString()}
+        ].map(s=>`<div class="stat"><span>${s.l}</span><strong>${s.v}</strong></div>`).join('')}</div>
+        <table><tr><th>Week</th><th>Leads</th><th>Emails</th><th>Replies</th><th>Appts</th><th>Conv %</th></tr>
+        ${reports.map(r=>`<tr><td>${r.week}</td><td>${r.leads_added}</td><td>${r.emails_sent}</td><td>${r.replies}</td><td>${r.appointments}</td><td>${r.conversion_rate}%</td></tr>`).join('')}
+        </table></body></html>`;
+        w.document.write(html);
+        w.document.close();
+        setTimeout(() => { w.print(); }, 500);
+    };
+
+    const upcomingAppts = (appointments || []).filter(a => a.status === 'Upcoming' || a.status === 'Completed').slice(0, 6);
+
+    return (
+        <div className="space-y-6">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+                <div>
+                    <h1 className="text-lg font-semibold">Reports</h1>
+                    <p className="text-sm text-gray-500 mt-0.5">Your pipeline performance</p>
+                </div>
+                <div className="flex gap-2">
+                    {['week','month','last'].map(r => (
+                        <button key={r} onClick={() => setRange(r)}
+                            className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                            style={{
+                                background: range === r ? 'rgba(37,99,235,0.15)' : '#111',
+                                color: range === r ? '#2563EB' : '#9CA3AF',
+                                border: `1px solid ${range === r ? 'rgba(37,99,235,0.3)' : '#1A1A1A'}`,
+                            }}>
+                            {r === 'week' ? 'This Week' : r === 'month' ? 'This Month' : 'Last Month'}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            {/* Stat cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {[
+                    { label: 'Leads Delivered', value: totalLeads, icon: 'Users', color: '#2563EB', bg: 'rgba(37,99,235,0.1)' },
+                    { label: 'Emails Sent', value: totalEmails.toLocaleString(), icon: 'Mail', color: '#8B5CF6', bg: 'rgba(139,92,246,0.1)' },
+                    { label: 'Appointments Booked', value: totalAppts, icon: 'CalendarCheck', color: '#22C55E', bg: 'rgba(34,197,94,0.1)' },
+                    { label: 'Est. Pipeline Value', value: `$${pipelineValue.toLocaleString()}`, icon: 'DollarSign', color: '#EAB308', bg: 'rgba(234,179,8,0.1)' },
+                ].map((c, i) => (
+                    <div key={i} className="rounded-xl p-5" style={{ background: '#111', border: '1px solid #1A1A1A' }}>
+                        <div className="flex items-center gap-3 mb-3">
+                            <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: c.bg }}>
+                                <Icon name={c.icon} size={16} color={c.color} />
+                            </div>
+                            <span className="text-xs text-gray-500">{c.label}</span>
+                        </div>
+                        <div className="text-2xl font-bold">{c.value}</div>
+                    </div>
+                ))}
+            </div>
+
+            {/* Performance chart */}
+            <div className="rounded-xl p-5" style={{ background: '#111', border: '1px solid #1A1A1A' }}>
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-sm font-semibold">Weekly Performance</h3>
+                    <div className="flex items-center gap-4 text-[10px] text-gray-500">
+                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ background: '#2563EB' }} /> Leads</span>
+                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ background: '#6B7280' }} /> Emails (÷10)</span>
+                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ background: '#22C55E' }} /> Appointments</span>
+                    </div>
+                </div>
+                <div ref={chartRef} style={{ height: 220 }}>
+                    {chartW > 0 && (
+                        <BarChart width={chartW} height={220} data={chartData} margin={{ top: 4, right: 8, left: -10, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#1A1A1A" vertical={false} />
+                            <XAxis dataKey="week" tick={{ fill: '#555', fontSize: 11 }} tickLine={false} axisLine={false} />
+                            <YAxis tick={{ fill: '#555', fontSize: 11 }} tickLine={false} axisLine={false} />
+                            <Tooltip contentStyle={{ background: '#111', border: '1px solid #1F1F1F', borderRadius: 10, color: '#fff', fontSize: 12 }}
+                                cursor={{ fill: 'rgba(255,255,255,0.02)' }} />
+                            <Bar dataKey="leads" fill="#2563EB" radius={[4,4,0,0]} isAnimationActive={false} />
+                            <Bar dataKey="appointments" fill="#22C55E" radius={[4,4,0,0]} isAnimationActive={false} />
+                        </BarChart>
+                    )}
+                </div>
+            </div>
+
+            {/* Breakdown table */}
+            <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #1A1A1A' }}>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                        <thead>
+                            <tr style={{ borderBottom: '1px solid #1A1A1A', background: '#0D0D0D' }}>
+                                {['Week','Leads','Emails Sent','Opens','Replies','Appointments','Conversion %'].map(h => (
+                                    <th key={h} className="px-4 py-3 text-left text-xs font-medium whitespace-nowrap"
+                                        style={{ color: '#555', letterSpacing: '0.05em' }}>{h}</th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {reports.map((r, i) => {
+                                const opens = Math.round(r.emails_sent * 0.38);
+                                const isBest = i === bestWeekIdx;
+                                const isWorst = i === worstWeekIdx;
+                                return (
+                                    <tr key={r.id} className="tbl-row transition-colors"
+                                        style={{
+                                            borderBottom: i < reports.length - 1 ? '1px solid #141414' : 'none',
+                                            background: isBest ? 'rgba(34,197,94,0.04)' : isWorst ? 'rgba(239,68,68,0.04)' : '#111',
+                                        }}>
+                                        <td className="px-4 py-3 font-medium whitespace-nowrap">
+                                            {r.week}
+                                            {isBest && <span className="ml-2 text-[10px] text-green-400">Best</span>}
+                                            {isWorst && <span className="ml-2 text-[10px] text-red-400">Lowest</span>}
+                                        </td>
+                                        <td className="px-4 py-3 whitespace-nowrap" style={{ color: '#9CA3AF' }}>{r.leads_added}</td>
+                                        <td className="px-4 py-3 whitespace-nowrap" style={{ color: '#9CA3AF' }}>{r.emails_sent}</td>
+                                        <td className="px-4 py-3 whitespace-nowrap" style={{ color: '#9CA3AF' }}>{opens}</td>
+                                        <td className="px-4 py-3 whitespace-nowrap" style={{ color: '#9CA3AF' }}>{r.replies}</td>
+                                        <td className="px-4 py-3 whitespace-nowrap" style={{ color: '#9CA3AF' }}>{r.appointments}</td>
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <div className="flex items-center gap-2">
+                                                <div className="h-1.5 rounded-full overflow-hidden" style={{ background: '#1A1A1A', width: 60 }}>
+                                                    <div className="h-full rounded-full"
+                                                        style={{ width: `${Math.min(r.conversion_rate, 100)}%`, background: '#2563EB' }} />
+                                                </div>
+                                                <span style={{ color: '#9CA3AF' }}>{r.conversion_rate}%</span>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            {/* Appointments this month */}
+            {upcomingAppts.length > 0 && (
+                <div>
+                    <h3 className="text-sm font-semibold mb-3">Appointments This Month</h3>
+                    <div className="grid gap-3 md:grid-cols-2">
+                        {upcomingAppts.map(a => (
+                            <div key={a.id} className="rounded-xl p-4" style={{ background: '#111', border: '1px solid #1A1A1A' }}>
+                                <div className="flex items-start justify-between mb-2">
+                                    <div>
+                                        <div className="font-medium text-sm">{a.prospect_name}</div>
+                                        <div className="text-xs text-gray-500">{a.company} — {a.specialty}</div>
+                                    </div>
+                                    <Badge status={a.status} />
+                                </div>
+                                <div className="text-xs text-gray-400 mb-2">
+                                    <Icon name="Calendar" size={12} className="mr-1 inline" /> {fmtDateTime(a.meeting_datetime)}
+                                </div>
+                                {a.notes && <p className="text-xs text-gray-500 leading-relaxed">{a.notes}</p>}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Export section */}
+            <div className="rounded-xl p-5" style={{ background: '#111', border: '1px solid #1A1A1A' }}>
+                <h3 className="text-sm font-semibold mb-3">Export Your Data</h3>
+                <div className="flex gap-3 flex-wrap">
+                    <button onClick={exportPDF}
+                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-white transition-colors"
+                        style={{ background: '#2563EB' }}
+                        onMouseEnter={e => e.currentTarget.style.background = '#1D4ED8'}
+                        onMouseLeave={e => e.currentTarget.style.background = '#2563EB'}>
+                        <Icon name="FileText" size={16} /> Download PDF Report
+                    </button>
+                    <button onClick={exportCSVReport}
+                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors"
+                        style={{ background: 'rgba(37,99,235,0.1)', color: '#2563EB', border: '1px solid rgba(37,99,235,0.25)' }}>
+                        <Icon name="Download" size={16} /> Download CSV
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ── ROI Calculator page ──────────────────────────────────────────────────────
+function ROIPage({ appointments }) {
+    const realAppts = appointments ? appointments.filter(a => a.status !== 'No-show').length : 5;
+    const [apptsPerMonth, setApptsPerMonth] = useState(realAppts || 5);
+    const [closeRate, setCloseRate] = useState(25);
+    const [policyValue, setPolicyValue] = useState(8000);
+    const [annualPremium, setAnnualPremium] = useState(2400);
+    const [planCost] = useState(3497);
+    const [shared, setShared] = useState(false);
+
+    const newClients = (apptsPerMonth * closeRate / 100);
+    const monthlyRevenue = newClients * policyValue;
+    const annualRecurring = newClients * annualPremium * 12;
+    const roiMultiple = planCost > 0 ? (monthlyRevenue / planCost) : 0;
+    const roiPct = planCost > 0 ? ((monthlyRevenue - planCost) / planCost * 100) : 0;
+
+    const roiColor = roiMultiple >= 2 ? '#22C55E' : roiMultiple >= 1 ? '#EAB308' : '#EF4444';
+
+    const shareResults = () => {
+        setShared(true);
+        setTimeout(() => setShared(false), 2000);
+    };
+
+    function Slider({ label, value, onChange, min, max, step, prefix, suffix }) {
+        return (
+            <div className="mb-5">
+                <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs text-gray-400">{label}</label>
+                    <div className="flex items-center gap-1">
+                        {prefix && <span className="text-xs text-gray-500">{prefix}</span>}
+                        <input type="number" value={value} onChange={e => onChange(parseFloat(e.target.value) || 0)}
+                            className="w-20 rounded-lg px-2 py-1 text-sm text-right"
+                            style={{ background: '#0A0A0A', border: '1px solid #1A1A1A', color: '#e5e7eb' }} />
+                        {suffix && <span className="text-xs text-gray-500">{suffix}</span>}
+                    </div>
+                </div>
+                <input type="range" min={min} max={max} step={step} value={value}
+                    onChange={e => onChange(parseFloat(e.target.value))}
+                    className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
+                    style={{ background: `linear-gradient(to right, #2563EB ${((value-min)/(max-min))*100}%, #1A1A1A ${((value-min)/(max-min))*100}%)` }} />
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-6">
+            <div>
+                <h1 className="text-lg font-semibold">ROI Calculator</h1>
+                <p className="text-sm text-gray-500 mt-0.5">See what BrokerPipeline is worth to your business</p>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Inputs */}
+                <div className="rounded-xl p-6" style={{ background: '#111', border: '1px solid #1A1A1A' }}>
+                    <h3 className="text-sm font-semibold mb-5">Your Numbers</h3>
+                    <Slider label="Appointments per month" value={apptsPerMonth} onChange={setApptsPerMonth}
+                        min={1} max={50} step={1} />
+                    <Slider label="Your close rate" value={closeRate} onChange={setCloseRate}
+                        min={5} max={80} step={1} suffix="%" />
+                    <Slider label="Average policy value" value={policyValue} onChange={setPolicyValue}
+                        min={1000} max={50000} step={500} prefix="$" />
+                    <Slider label="Average annual premium" value={annualPremium} onChange={setAnnualPremium}
+                        min={500} max={20000} step={100} prefix="$" />
+                </div>
+
+                {/* Outputs */}
+                <div className="space-y-4">
+                    {/* Big ROI number */}
+                    <div className="rounded-xl p-8 text-center" style={{ background: '#111', border: '1px solid #1A1A1A' }}>
+                        <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Your Estimated ROI</div>
+                        <div className="text-6xl font-bold mb-2" style={{ color: roiColor }}>
+                            {roiMultiple.toFixed(1)}x
+                        </div>
+                        <div className="text-sm" style={{ color: roiColor }}>
+                            {roiMultiple >= 2 ? 'Excellent return' : roiMultiple >= 1 ? 'Positive return' : 'Below breakeven'}
+                        </div>
+                    </div>
+
+                    {/* Output stats */}
+                    <div className="grid grid-cols-2 gap-3">
+                        {[
+                            { label: 'New Clients/Mo', value: newClients.toFixed(1), icon: 'UserPlus' },
+                            { label: 'New Revenue/Mo', value: `$${monthlyRevenue.toLocaleString()}`, icon: 'DollarSign' },
+                            { label: 'Annual Recurring', value: `$${annualRecurring.toLocaleString()}`, icon: 'TrendingUp' },
+                            { label: 'ROI vs Cost', value: `${roiPct.toFixed(0)}%`, icon: 'Target' },
+                        ].map((s, i) => (
+                            <div key={i} className="rounded-xl p-4" style={{ background: '#111', border: '1px solid #1A1A1A' }}>
+                                <div className="flex items-center gap-2 mb-2">
+                                    <Icon name={s.icon} size={14} color="#555" />
+                                    <span className="text-[10px] text-gray-500">{s.label}</span>
+                                </div>
+                                <div className="text-lg font-bold">{s.value}</div>
+                            </div>
+                        ))}
+                    </div>
+
+                    <button onClick={shareResults}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-medium text-white transition-colors"
+                        style={{ background: shared ? '#22C55E' : '#2563EB' }}>
+                        <Icon name={shared ? 'Check' : 'Share2'} size={16} />
+                        {shared ? 'Link Copied!' : 'Share My Results'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ── API Integration Section ──────────────────────────────────────────────────
+function ApiIntegrationSection({ user }) {
+    const [showKey, setShowKey] = useState(false);
+    const [copied, setCopied]   = useState('');
+
+    const clientId = user?.id || 'your-client-uuid';
+    const apiKey   = 'bp_live_' + (user?.id ? user.id.replace(/-/g, '').slice(0, 24) : 'xxxxxxxxxxxxxxxxxxxxxxxx');
+    const baseUrl  = SUPABASE_URL + '/functions/v1';
+
+    const endpoints = [
+        {
+            label: 'Receive New Lead',
+            url: `${baseUrl}/api-leads`,
+            method: 'POST',
+            body: `{
+  "client_id": "${clientId}",
+  "name": "John Doe",
+  "company": "Acme Corp",
+  "email": "john@acme.com",
+  "phone": "(555) 123-4567",
+  "specialty": "Commercial",
+  "score": 8,
+  "status": "New"
+}`,
+        },
+        {
+            label: 'Update Lead Status',
+            url: `${baseUrl}/api-leads-update`,
+            method: 'POST',
+            body: `{
+  "lead_id": "lead-uuid-here",
+  "status": "Contacted"
+}`,
+        },
+        {
+            label: 'Receive Booked Appointment',
+            url: `${baseUrl}/api-appointments`,
+            method: 'POST',
+            body: `{
+  "client_id": "${clientId}",
+  "prospect_name": "Jane Smith",
+  "prospect_email": "jane@company.com",
+  "meeting_datetime": "2026-05-15T14:00:00Z",
+  "specialty": "Commercial",
+  "notes": "Interested in GL coverage"
+}`,
+        },
+        {
+            label: 'Receive Weekly Report',
+            url: `${baseUrl}/api-reports`,
+            method: 'POST',
+            body: `{
+  "client_id": "${clientId}",
+  "week": "May 5 – May 11",
+  "leads_added": 25,
+  "emails_sent": 192,
+  "replies": 31,
+  "appointments": 7
+}`,
+        },
+    ];
+
+    const maskedKey = apiKey.slice(0, 10) + '••••••••••••••' + apiKey.slice(-4);
+
+    const copyToClipboard = (text, id) => {
+        navigator.clipboard.writeText(text);
+        setCopied(id);
+        setTimeout(() => setCopied(''), 1500);
+    };
+
+    return (
+        <div className="rounded-xl p-6 space-y-5" style={{ background: '#111', border: '1px solid #1A1A1A' }}>
+            <div>
+                <h2 className="text-sm font-medium text-gray-300 flex items-center gap-2">
+                    <Icon name="Webhook" size={16} color="#2563EB" />
+                    API Integration
+                </h2>
+                <p className="text-xs text-gray-500 mt-1">
+                    Share these URLs with your Make.com scenario to connect your pipeline automatically.
+                </p>
+            </div>
+
+            {/* API Key */}
+            <div>
+                <label className="block text-xs text-gray-500 mb-1.5">Your API Key</label>
+                <div className="flex items-center gap-2">
+                    <div
+                        className="flex-1 rounded-lg px-4 py-2.5 text-sm font-mono"
+                        style={{ background: '#0A0A0A', border: '1px solid #1A1A1A', color: '#9CA3AF' }}
+                    >
+                        {showKey ? apiKey : maskedKey}
+                    </div>
+                    <button
+                        onClick={() => setShowKey(v => !v)}
+                        className="px-3 py-2.5 rounded-lg text-xs text-gray-400 hover:text-white transition-colors"
+                        style={{ border: '1px solid #1A1A1A' }}
+                    >
+                        <Icon name={showKey ? 'EyeOff' : 'Eye'} size={14} />
+                    </button>
+                    <button
+                        onClick={() => copyToClipboard(apiKey, 'key')}
+                        className="px-3 py-2.5 rounded-lg text-xs transition-colors"
+                        style={{
+                            border: `1px solid ${copied === 'key' ? 'rgba(34,197,94,0.3)' : '#1A1A1A'}`,
+                            color: copied === 'key' ? '#22C55E' : '#9CA3AF',
+                        }}
+                    >
+                        {copied === 'key' ? '✓' : <Icon name="Copy" size={14} />}
+                    </button>
+                </div>
+                <p className="text-xs text-gray-600 mt-1.5">
+                    Include as header: <code className="text-gray-500">x-api-key: your-key</code>
+                </p>
+            </div>
+
+            {/* Client ID */}
+            <div>
+                <label className="block text-xs text-gray-500 mb-1.5">Your Client ID</label>
+                <div className="flex items-center gap-2">
+                    <div
+                        className="flex-1 rounded-lg px-4 py-2.5 text-sm font-mono truncate"
+                        style={{ background: '#0A0A0A', border: '1px solid #1A1A1A', color: '#9CA3AF' }}
+                    >
+                        {clientId}
+                    </div>
+                    <button
+                        onClick={() => copyToClipboard(clientId, 'cid')}
+                        className="px-3 py-2.5 rounded-lg text-xs transition-colors"
+                        style={{
+                            border: `1px solid ${copied === 'cid' ? 'rgba(34,197,94,0.3)' : '#1A1A1A'}`,
+                            color: copied === 'cid' ? '#22C55E' : '#9CA3AF',
+                        }}
+                    >
+                        {copied === 'cid' ? '✓' : <Icon name="Copy" size={14} />}
+                    </button>
+                </div>
+            </div>
+
+            {/* Endpoints */}
+            <div>
+                <label className="block text-xs text-gray-500 mb-2">Webhook Endpoints</label>
+                <div className="space-y-3">
+                    {endpoints.map((ep, i) => (
+                        <div key={i} className="rounded-lg p-4 space-y-2" style={{ background: '#0A0A0A', border: '1px solid #1A1A1A' }}>
+                            <div className="flex items-center justify-between">
+                                <span className="text-xs font-medium text-gray-300">{ep.label}</span>
+                                <span className="text-[10px] font-mono px-2 py-0.5 rounded"
+                                    style={{ background: 'rgba(37,99,235,0.1)', color: '#60A5FA', border: '1px solid rgba(37,99,235,0.2)' }}>
+                                    {ep.method}
+                                </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <code className="flex-1 text-xs text-gray-500 font-mono truncate">{ep.url}</code>
+                                <button
+                                    onClick={() => copyToClipboard(ep.url, `url-${i}`)}
+                                    className="px-2 py-1 rounded text-xs transition-colors shrink-0"
+                                    style={{
+                                        border: `1px solid ${copied === `url-${i}` ? 'rgba(34,197,94,0.3)' : '#1A1A1A'}`,
+                                        color: copied === `url-${i}` ? '#22C55E' : '#9CA3AF',
+                                    }}
+                                >
+                                    {copied === `url-${i}` ? '✓ Copied' : 'Copy URL'}
+                                </button>
+                            </div>
+
+                            {/* Expandable example body */}
+                            <details className="group">
+                                <summary className="text-xs text-gray-600 cursor-pointer hover:text-gray-400 transition-colors select-none">
+                                    Example request body
+                                </summary>
+                                <pre
+                                    className="mt-2 text-xs font-mono rounded-lg p-3 overflow-x-auto"
+                                    style={{ background: '#060606', color: '#6B7280', border: '1px solid #141414' }}
+                                >{ep.body}</pre>
+                            </details>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* Instructions */}
+            <div className="rounded-lg px-4 py-3" style={{ background: 'rgba(37,99,235,0.05)', border: '1px solid rgba(37,99,235,0.15)' }}>
+                <p className="text-xs text-blue-400 leading-relaxed">
+                    <strong>How to connect:</strong> Copy your API key and the endpoint URLs above into your Make.com HTTP module.
+                    Set the method to POST, add the <code className="font-mono">x-api-key</code> header, and send the JSON body matching the example format.
+                    Leads, appointments, and reports will appear in your dashboard automatically.
+                </p>
+            </div>
+        </div>
+    );
+}
+
+// ── Settings page ─────────────────────────────────────────────────────────────
+function SettingsPage({ user }) {
+    const [saved, setSaved]     = useState(false);
+    const [notifs, setNotifs]   = useState({ weekly: true, booked: true, replied: false });
+
+    const save = () => {
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2000);
+    };
+
+    const signOut = async () => {
+        if (sb) await sb.auth.signOut();
+        window.location.href = 'login.html';
+    };
+
+    return (
+        <div className="space-y-6 max-w-xl">
+            <div>
+                <h1 className="text-lg font-semibold">Settings</h1>
+                <p className="text-sm text-gray-500 mt-0.5">Manage your account</p>
+            </div>
+
+            {/* Account */}
+            <div className="rounded-xl p-6 space-y-4" style={{ background: '#111', border: '1px solid #1A1A1A' }}>
+                <h2 className="text-sm font-medium text-gray-300">Account Information</h2>
+                {[
+                    { label: 'Full Name',   placeholder: 'John Smith',           type: 'text' },
+                    { label: 'Email',       placeholder: user?.email ?? 'you@example.com', type: 'email' },
+                    { label: 'Brokerage',   placeholder: 'Smith Insurance Group', type: 'text' },
+                    { label: 'Phone',       placeholder: '(555) 000-0000',        type: 'tel' },
+                ].map(f => (
+                    <div key={f.label}>
+                        <label className="block text-xs text-gray-500 mb-1.5">{f.label}</label>
+                        <input
+                            type={f.type}
+                            placeholder={f.placeholder}
+                            className="w-full rounded-lg px-4 py-2.5 text-sm placeholder-gray-700 transition-colors"
+                            style={{ background: '#0A0A0A', border: '1px solid #1A1A1A', color: '#e5e7eb' }}
+                            onFocus={e => e.target.style.borderColor = '#2563EB'}
+                            onBlur={e => e.target.style.borderColor = '#1A1A1A'}
+                        />
+                    </div>
+                ))}
+                <button
+                    onClick={save}
+                    className="px-5 py-2.5 rounded-lg text-sm font-medium transition-colors"
+                    style={{
+                        background: saved ? 'rgba(34,197,94,0.15)' : '#2563EB',
+                        color: saved ? '#22C55E' : '#fff',
+                        border: saved ? '1px solid rgba(34,197,94,0.3)' : '1px solid transparent',
+                    }}
+                    onMouseEnter={e => { if (!saved) e.currentTarget.style.background = '#1D4ED8'; }}
+                    onMouseLeave={e => { if (!saved) e.currentTarget.style.background = '#2563EB'; }}
+                >
+                    {saved ? '✓ Saved' : 'Save Changes'}
+                </button>
+            </div>
+
+            {/* Notifications */}
+            <div className="rounded-xl p-6 space-y-4" style={{ background: '#111', border: '1px solid #1A1A1A' }}>
+                <h2 className="text-sm font-medium text-gray-300">Notifications</h2>
+                {[
+                    { key: 'weekly', label: 'Weekly performance report' },
+                    { key: 'booked', label: 'New appointment booked'    },
+                    { key: 'replied',label: 'Lead replied to outreach'  },
+                ].map(({ key, label }) => (
+                    <label key={key} className="flex items-center justify-between cursor-pointer">
+                        <span className="text-sm text-gray-400">{label}</span>
+                        <div
+                            onClick={() => setNotifs(prev => ({ ...prev, [key]: !prev[key] }))}
+                            className="w-10 h-5 rounded-full relative transition-colors cursor-pointer"
+                            style={{ background: notifs[key] ? '#2563EB' : '#1A1A1A' }}
+                        >
+                            <div
+                                className="absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform"
+                                style={{ transform: notifs[key] ? 'translateX(22px)' : 'translateX(2px)' }}
+                            />
+                        </div>
+                    </label>
+                ))}
+            </div>
+
+            {/* API Integration */}
+            <ApiIntegrationSection user={user} />
+
+            {/* Danger zone */}
+            <div className="rounded-xl p-6" style={{ background: '#111', border: '1px solid rgba(239,68,68,0.2)' }}>
+                <h2 className="text-sm font-medium mb-2" style={{ color: '#EF4444' }}>Danger Zone</h2>
+                <p className="text-sm text-gray-500 mb-4">You will be signed out of your account.</p>
+                <button
+                    onClick={signOut}
+                    className="px-5 py-2.5 rounded-lg text-sm font-medium transition-colors"
+                    style={{ border: '1px solid rgba(239,68,68,0.3)', color: '#EF4444' }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(239,68,68,0.08)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                    Sign Out
+                </button>
+            </div>
+        </div>
+    );
+}
+
+// ── Root App ──────────────────────────────────────────────────────────────────
+function App() {
+    const [page,    setPage]    = useState('overview');
+    const [sbOpen,  setSbOpen]  = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [user,    setUser]    = useState(null);
+    const [leads,   setLeads]   = useState([]);
+    const [appts,   setAppts]   = useState([]);
+    const [reports, setReports] = useState([]);
+    const [daily,   setDaily]   = useState([]);
+
+    useEffect(() => {
+        (async () => {
+            try {
+                if (sb) {
+                    const { data: { session }, error } = await sb.auth.getSession();
+                    if (error || !session) { window.location.href = 'login.html'; return; }
+                    setUser(session.user);
+
+                    const [lr, ar, rr, dr] = await Promise.all([
+                        sb.from('leads').select('*').order('date_added', { ascending: false }),
+                        sb.from('appointments').select('*').order('meeting_datetime'),
+                        sb.from('reports').select('*').order('id', { ascending: false }),
+                        sb.from('daily_leads').select('*').order('date'),
+                    ]);
+
+                    setLeads(lr.data?.length   ? lr.data : MOCK_LEADS);
+                    setAppts(ar.data?.length   ? ar.data : MOCK_APPOINTMENTS);
+                    setReports(rr.data?.length ? rr.data : MOCK_REPORTS);
+                    setDaily(dr.data?.length
+                        ? dr.data.map(d => ({ date: d.date.slice(5), leads: d.count }))
+                        : MOCK_DAILY);
+                } else {
+                    // Demo mode (Supabase unavailable)
+                    setUser({ email: 'demo@brokerpipeline.ai' });
+                    setLeads(MOCK_LEADS);
+                    setAppts(MOCK_APPOINTMENTS);
+                    setReports(MOCK_REPORTS);
+                    setDaily(MOCK_DAILY);
+                }
+            } catch (err) {
+                console.warn('Init failed, using demo data:', err);
+                setUser({ email: 'demo@brokerpipeline.ai' });
+                setLeads(MOCK_LEADS);
+                setAppts(MOCK_APPOINTMENTS);
+                setReports(MOCK_REPORTS);
+                setDaily(MOCK_DAILY);
+            }
+            setLoading(false);
+        })();
+    }, []);
+
+    if (loading) {
+        return (
+            <div className="h-screen flex items-center justify-center" style={{ background: '#0A0A0A' }}>
+                <div className="flex items-center gap-3 text-gray-400 text-sm">
+                    <div
+                        className="w-4 h-4 rounded-full border-2 border-t-transparent animate-spin"
+                        style={{ borderColor: '#2563EB', borderTopColor: 'transparent' }}
+                    />
+                    Loading…
+                </div>
+            </div>
+        );
+    }
+
+    const PAGES = {
+        overview:     <OverviewPage     leads={leads}  reports={reports} daily={daily} />,
+        leads:        <LeadsPage        leads={leads} />,
+        appointments: <AppointmentsPage appointments={appts} />,
+        reports:      <ReportsPage      reports={reports} appointments={appts} />,
+        roi:          <ROIPage          appointments={appts} />,
+        settings:     <SettingsPage     user={user} />,
+    };
+
+    return (
+        <div className="h-screen flex overflow-hidden" style={{ background: '#0A0A0A' }}>
+            <Sidebar page={page} setPage={setPage} open={sbOpen} setOpen={setSbOpen} />
+
+            <div className="flex-1 flex flex-col md:ml-60 overflow-hidden">
+                <TopBar user={user} open={sbOpen} setOpen={setSbOpen} />
+                <main className="flex-1 overflow-y-auto p-5 md:p-6">
+                    {PAGES[page]}
+                </main>
+            </div>
+        </div>
+    );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

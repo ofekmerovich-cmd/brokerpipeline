@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Agent — BrokerPipeline.ai</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        html,body,#root{height:100%}
+        body{background:#0A0A0A;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
+        ::-webkit-scrollbar{width:5px;height:5px}
+        ::-webkit-scrollbar-track{background:transparent}
+        ::-webkit-scrollbar-thumb{background:#2A2A2A;border-radius:99px}
+        .sidebar{transition:transform .25s cubic-bezier(.4,0,.2,1)}
+        input:focus,textarea:focus,select:focus{outline:none}
+        .tbl-row:hover{background:rgba(255,255,255,0.025)}
+        .flow-node{transition:all .15s ease}
+        .flow-node:hover{transform:scale(1.03)}
+    </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback, useMemo } = React;
+
+// ── Supabase ─────────────────────────────────────────────────────────────────
+const SUPABASE_URL      = 'https://glokxezbcrelrndcbhhs.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdsb2t4ZXpiY3JlbHJuZGNiaGhzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5NzMxNzEsImV4cCI6MjA5MzU0OTE3MX0.imnH5pmrXpiKz18fzxyF78b23luNNmu9izM3yBSlbQ4';
+const ADMIN_EMAIL = 'admin@brokerpipeline.ai';
+
+let sb = null;
+try {
+    if (typeof supabase !== 'undefined' && supabase.createClient) {
+        sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    }
+} catch(e) {}
+
+// ── Icon ─────────────────────────────────────────────────────────────────────
+function Icon({ name, size = 18, color = 'currentColor', className = '' }) {
+    const ref = useRef(null);
+    useEffect(() => {
+        if (!ref.current || !lucide?.icons?.[name]) return;
+        ref.current.innerHTML = '';
+        const svg = lucide.createElement(lucide.icons[name]);
+        svg.setAttribute('width', size);
+        svg.setAttribute('height', size);
+        svg.setAttribute('stroke', color);
+        svg.style.display = 'block';
+        svg.style.flexShrink = '0';
+        ref.current.appendChild(svg);
+    }, [name, size, color]);
+    return <span ref={ref} className={`inline-flex items-center ${className}`} />;
+}
+
+// ── Shared UI ────────────────────────────────────────────────────────────────
+const IS = { background: '#0A0A0A', border: '1px solid #1A1A1A', color: '#e5e7eb' };
+const fb = e => e.target.style.borderColor = '#2563EB';
+const bb = e => e.target.style.borderColor = '#1A1A1A';
+
+const BADGE_MAP = {
+    Active:         'bg-green-500/15 text-green-400 border-green-500/25',
+    Paused:         'bg-yellow-500/15 text-yellow-400 border-yellow-500/25',
+    Booked:         'bg-green-500/15 text-green-400 border-green-500/25',
+    'Not Interested':'bg-red-500/15 text-red-400 border-red-500/25',
+    'No Answer':    'bg-gray-500/15 text-gray-400 border-gray-500/25',
+    Voicemail:      'bg-blue-500/15 text-blue-400 border-blue-500/25',
+    'Call Back':    'bg-yellow-500/15 text-yellow-400 border-yellow-500/25',
+    Confirmed:      'bg-green-500/15 text-green-400 border-green-500/25',
+    Rescheduled:    'bg-yellow-500/15 text-yellow-400 border-yellow-500/25',
+    'No-show':      'bg-red-500/15 text-red-400 border-red-500/25',
+    Male:           'bg-blue-500/15 text-blue-400 border-blue-500/25',
+    Female:         'bg-pink-500/15 text-pink-400 border-pink-500/25',
+};
+function Badge({ status }) {
+    return <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium border ${BADGE_MAP[status] || 'bg-gray-500/15 text-gray-400 border-gray-500/25'}`}>{status}</span>;
+}
+
+// ── Mock Data ────────────────────────────────────────────────────────────────
+const MOCK_CLIENTS = [
+    { id: 'c1', name: 'John Smith' },
+    { id: 'c2', name: 'Sarah Johnson' },
+    { id: 'c3', name: 'Mike Davis' },
+    { id: 'c4', name: 'Robert Williams' },
+    { id: 'c5', name: 'David Brown' },
+];
+
+const DEFAULT_SCRIPT = [
+    { id: 's1', label: 'GREETING', body: `Hi, is this {{first_name}}?\nHey {{first_name}}, this is {{agent_name}} calling on behalf of {{broker_name}}.\nI'm reaching out because we noticed you're in the insurance space and wanted to ask you one quick question — do you have 60 seconds?` },
+    { id: 's2', label: 'IF YES — QUALIFY', body: `Perfect, I'll be quick.\nWe work with independent brokers to fill their calendar with pre-qualified appointments every month — without cold calling or buying shared leads.\n\nQuick question: is getting consistent, qualified appointments something you're currently focused on growing?` },
+    { id: 's3', label: 'IF INTERESTED — BOOK', body: `That's great to hear.\nI actually have {{broker_name}}'s calendar right here — they have availability this Thursday at 2pm or Friday at 10am Eastern time.\nWhich one works better for you?` },
+    { id: 's4', label: 'CONFIRM BOOKING', body: `Perfect — I'm locking in {{chosen_time}} for you right now.\nYou'll get a calendar invite and reminder to {{email}}.\nIs that the best email for you?` },
+    { id: 's5', label: 'OBJECTION: NOT INTERESTED', body: `Totally understand — I appreciate your time {{first_name}}.\nIf things change down the road, don't hesitate to reach out.\nHave a great day!` },
+    { id: 's6', label: 'OBJECTION: CALL BACK LATER', body: `Of course — when would be a better time to reach you?\nMorning or afternoon tomorrow?` },
+    { id: 's7', label: 'VOICEMAIL', body: `Hi {{first_name}}, this is {{agent_name}} calling for {{broker_name}}.\nWe help insurance brokers get 15 to 25 qualified appointments each month using AI automation.\nIf that sounds interesting, call us back at {{phone_number}} or check us out at brokerpipeline.ai.\nHave a great day!` },
+];
+
+const MOCK_TRIGGERS = [
+    { id: 't1', name: 'Email Opened', description: 'Call lead X hours after they open an email', unit: 'hours', delay: 2, enabled: true, lastTriggered: '2026-05-04T14:32:00Z', totalCalls: 142 },
+    { id: 't2', name: 'Email Replied', description: 'Call lead X minutes after they reply positively', unit: 'minutes', delay: 30, enabled: true, lastTriggered: '2026-05-04T16:05:00Z', totalCalls: 67 },
+    { id: 't3', name: 'No Response Follow-up', description: 'Call leads who received 2+ emails but never opened', unit: 'days', delay: 5, enabled: false, lastTriggered: '2026-05-03T09:15:00Z', totalCalls: 213 },
+    { id: 't4', name: 'Lead Score Threshold', description: 'Call all leads with score above X immediately', unit: 'score', delay: 8, enabled: true, lastTriggered: '2026-05-04T17:20:00Z', totalCalls: 89 },
+    { id: 't5', name: 'Inbound Call Missed', description: 'Call back anyone who called the broker number and was not answered', unit: 'minutes', delay: 5, enabled: true, lastTriggered: '2026-05-04T11:45:00Z', totalCalls: 34 },
+];
+
+function generateCalls() {
+    const outcomes = ['Booked', 'Not Interested', 'No Answer', 'Voicemail', 'Call Back'];
+    const leads = ['James Carter', 'Lisa Monroe', 'David Park', 'Emma Chen', 'Ryan Torres', 'Olivia Grant', 'Noah Kim', 'Mia Patel', 'Ethan Brooks', 'Sophia Reyes', 'Liam Foster', 'Ava Mitchell', 'Lucas Rivera', 'Isabella Wright', 'Mason Lee', 'Charlotte Hayes', 'Logan Scott', 'Amelia Young', 'Jack Adams', 'Harper Nelson', 'Ben Cox', 'Zoe Ward', 'Tyler Cook', 'Chloe Bell'];
+    const notes = {
+        'Booked': 'Prospect agreed to meet. Confirmed email and time slot. Enthusiastic about learning more.',
+        'Not Interested': 'Prospect declined. Currently satisfied with lead source. Politely ended call.',
+        'No Answer': 'No pickup after 4 rings. Left no voicemail — will retry per trigger rules.',
+        'Voicemail': 'Reached voicemail. Left standard message with callback number and website.',
+        'Call Back': 'Prospect busy in meeting. Asked to call back tomorrow afternoon.',
+    };
+    const calls = [];
+    for (let i = 0; i < 47; i++) {
+        const outcome = outcomes[Math.floor(Math.random() * outcomes.length)];
+        const d = new Date('2026-05-04T08:00:00Z');
+        d.setMinutes(d.getMinutes() + Math.floor(Math.random() * 3 * 24 * 60));
+        calls.push({
+            id: `call-${i}`,
+            datetime: d.toISOString(),
+            lead_name: leads[i % leads.length],
+            lead_phone: `(${200+Math.floor(Math.random()*800)}) ${100+Math.floor(Math.random()*900)}-${1000+Math.floor(Math.random()*9000)}`,
+            client: MOCK_CLIENTS[i % MOCK_CLIENTS.length].name,
+            duration: outcome === 'No Answer' ? Math.floor(Math.random()*15)+5 : Math.floor(Math.random()*240)+30,
+            outcome,
+            notes: notes[outcome],
+        });
+    }
+    return calls.sort((a, b) => new Date(b.datetime) - new Date(a.datetime));
+}
+
+function generateBookings() {
+    const prospects = [
+        { name: 'James Carter', company: 'Carter Insurance Group', email: 'james@carterins.com', phone: '(312) 555-0142' },
+        { name: 'Lisa Monroe', company: 'Monroe & Associates', email: 'lisa@monroeassoc.com', phone: '(646) 555-0198' },
+        { name: 'David Park', company: 'ParkShield Insurance', email: 'david@parkshield.com', phone: '(213) 555-0167' },
+        { name: 'Emma Chen', company: 'Chen Benefits', email: 'emma@chenbenefits.com', phone: '(415) 555-0133' },
+        { name: 'Ryan Torres', company: 'Torres Risk Solutions', email: 'ryan@torresrisk.com', phone: '(305) 555-0155' },
+        { name: 'Olivia Grant', company: 'Grant & Co Insurance', email: 'olivia@grantco.com', phone: '(202) 555-0189' },
+        { name: 'Noah Kim', company: 'Kim Financial Services', email: 'noah@kimfinancial.com', phone: '(469) 555-0111' },
+        { name: 'Sophia Reyes', company: 'Reyes Protection LLC', email: 'sophia@reyesprotect.com', phone: '(786) 555-0144' },
+    ];
+    const statuses = ['Confirmed', 'Confirmed', 'Confirmed', 'Rescheduled', 'No-show'];
+    const channels = ['Voice Call', 'Email Sequence', 'Voice Call', 'Voice Call', 'Email Sequence'];
+    return prospects.map((p, i) => {
+        const d = new Date('2026-05-06T09:00:00Z');
+        d.setHours(d.getHours() + i * 26);
+        return {
+            id: `bk-${i}`,
+            prospect: p,
+            meeting_date: d.toISOString(),
+            client: MOCK_CLIENTS[i % MOCK_CLIENTS.length].name,
+            channel: channels[i % channels.length],
+            summary: `Prospect expressed interest in filling their calendar with qualified appointments. Discussed current lead generation challenges and confirmed availability for a strategy call with ${MOCK_CLIENTS[i % MOCK_CLIENTS.length].name}.`,
+            status: statuses[i % statuses.length],
+        };
+    });
+}
+
+const MOCK_CALLS = generateCalls();
+const MOCK_BOOKINGS = generateBookings();
+
+// ── Pagination Hook ──────────────────────────────────────────────────────────
+function usePagination(data, perPage = 10) {
+    const [pg, setPg] = useState(1);
+    const total = Math.ceil(data.length / perPage);
+    useEffect(() => { if (pg > total && total > 0) setPg(total); }, [data.length]);
+    const slice = data.slice((pg - 1) * perPage, pg * perPage);
+    return { page: pg, setPage: setPg, totalPages: total, rows: slice, total: data.length };
+}
+
+// ── Sidebar ──────────────────────────────────────────────────────────────────
+const NAV = [
+    { id: 'builder',  label: 'Agent Builder',  icon: 'Bot' },
+    { id: 'triggers', label: 'Call Triggers',   icon: 'Zap' },
+    { id: 'calls',    label: 'Call Log',         icon: 'Phone' },
+    { id: 'bookings', label: 'Bookings',         icon: 'CalendarCheck' },
+];
+
+function Sidebar({ page, setPage, open, setOpen }) {
+    return (
+        <>
+            {open && <div className="fixed inset-0 bg-black/60 z-20 md:hidden" onClick={() => setOpen(false)} />}
+            <aside className={`sidebar fixed inset-y-0 left-0 z-30 w-60 flex flex-col ${open ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}
+                style={{ background: '#0D0D0D', borderRight: '1px solid #1A1A1A' }}>
+                <div className="h-14 flex items-center px-5" style={{ borderBottom: '1px solid #1A1A1A' }}>
+                    <a href="index.html" className="text-base font-bold">
+                        BrokerPipeline<span style={{ color: '#2563EB' }}>.ai</span>
+                    </a>
+                    <span className="ml-2 px-2 py-0.5 rounded text-[10px] font-bold" style={{ background: 'rgba(139,92,246,0.15)', color: '#A78BFA', border: '1px solid rgba(139,92,246,0.25)' }}>
+                        VOICE AI
+                    </span>
+                </div>
+                <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
+                    {NAV.map(item => {
+                        const active = page === item.id;
+                        return (
+                            <button key={item.id}
+                                onClick={() => { setPage(item.id); setOpen(false); }}
+                                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-left transition-colors"
+                                style={{ background: active ? 'rgba(37,99,235,0.1)' : 'transparent', color: active ? '#2563EB' : '#9CA3AF' }}
+                                onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; e.currentTarget.style.color = active ? '#2563EB' : '#fff'; }}
+                                onMouseLeave={e => { e.currentTarget.style.background = active ? 'rgba(37,99,235,0.1)' : 'transparent'; e.currentTarget.style.color = active ? '#2563EB' : '#9CA3AF'; }}>
+                                <Icon name={item.icon} size={16} color={active ? '#2563EB' : 'currentColor'} />
+                                {item.label}
+                            </button>
+                        );
+                    })}
+                </nav>
+                <div className="px-4 py-3 space-y-2" style={{ borderTop: '1px solid #1A1A1A' }}>
+                    <button onClick={() => { window.location.href = 'admin.html'; }}
+                        className="flex items-center gap-2 text-xs text-gray-500 hover:text-white transition-colors">
+                        <Icon name="ArrowLeft" size={14} /> Back to Admin
+                    </button>
+                </div>
+            </aside>
+        </>
+    );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// SECTION 1 — Agent Builder
+// ════════════════════════════════════════════════════════════════════════════
+
+function ScriptFlowModal({ open, onClose, script }) {
+    if (!open) return null;
+
+    const nodes = [
+        { id: 'greeting', label: 'Greeting', color: '#2563EB', section: 'GREETING' },
+        { id: 'yes', label: 'Yes → Qualify', color: '#22C55E', section: 'IF YES — QUALIFY' },
+        { id: 'no', label: 'Not Interested', color: '#EF4444', section: 'OBJECTION: NOT INTERESTED' },
+        { id: 'interested', label: 'Interested → Book', color: '#22C55E', section: 'IF INTERESTED — BOOK' },
+        { id: 'callback', label: 'Call Back Later', color: '#EAB308', section: 'OBJECTION: CALL BACK LATER' },
+        { id: 'confirm', label: 'Confirm Booking', color: '#8B5CF6', section: 'CONFIRM BOOKING' },
+        { id: 'voicemail', label: 'Voicemail', color: '#3B82F6', section: 'VOICEMAIL' },
+    ];
+
+    const [activeNode, setActiveNode] = useState(null);
+    const activeScript = activeNode ? script.find(s => s.label === activeNode) : null;
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+            <div className="absolute inset-0 bg-black/70" />
+            <div className="relative w-full max-w-4xl rounded-2xl p-6" style={{ background: '#111', border: '1px solid #1F1F1F' }}
+                onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-lg font-semibold">Conversation Flow</h3>
+                    <button onClick={onClose} className="text-gray-500 hover:text-white"><Icon name="X" size={20} /></button>
+                </div>
+
+                <div className="flex gap-6">
+                    <div className="flex-1 flex flex-col items-center gap-2">
+                        {/* Greeting */}
+                        <div className="flow-node w-48 text-center px-4 py-3 rounded-xl cursor-pointer"
+                            style={{ background: 'rgba(37,99,235,0.12)', border: `2px solid ${activeNode === nodes[0].section ? '#2563EB' : 'rgba(37,99,235,0.3)'}` }}
+                            onClick={() => setActiveNode(nodes[0].section)}>
+                            <div className="text-sm font-medium text-blue-400">Greeting</div>
+                        </div>
+                        <Icon name="ArrowDown" size={16} color="#333" />
+
+                        {/* Branch: Yes / No / Voicemail */}
+                        <div className="flex gap-6 items-start">
+                            <div className="flex flex-col items-center gap-2">
+                                <div className="flow-node w-40 text-center px-3 py-2.5 rounded-xl cursor-pointer"
+                                    style={{ background: 'rgba(34,197,94,0.12)', border: `2px solid ${activeNode === nodes[1].section ? '#22C55E' : 'rgba(34,197,94,0.3)'}` }}
+                                    onClick={() => setActiveNode(nodes[1].section)}>
+                                    <div className="text-xs font-medium text-green-400">Yes → Qualify</div>
+                                </div>
+                                <Icon name="ArrowDown" size={16} color="#333" />
+                                <div className="flex gap-4">
+                                    <div className="flex flex-col items-center gap-2">
+                                        <div className="flow-node w-36 text-center px-3 py-2.5 rounded-xl cursor-pointer"
+                                            style={{ background: 'rgba(34,197,94,0.12)', border: `2px solid ${activeNode === nodes[3].section ? '#22C55E' : 'rgba(34,197,94,0.3)'}` }}
+                                            onClick={() => setActiveNode(nodes[3].section)}>
+                                            <div className="text-xs font-medium text-green-400">Book Meeting</div>
+                                        </div>
+                                        <Icon name="ArrowDown" size={16} color="#333" />
+                                        <div className="flow-node w-36 text-center px-3 py-2.5 rounded-xl cursor-pointer"
+                                            style={{ background: 'rgba(139,92,246,0.12)', border: `2px solid ${activeNode === nodes[5].section ? '#8B5CF6' : 'rgba(139,92,246,0.3)'}` }}
+                                            onClick={() => setActiveNode(nodes[5].section)}>
+                                            <div className="text-xs font-medium text-purple-400">Confirm</div>
+                                        </div>
+                                    </div>
+                                    <div className="flex flex-col items-center gap-2">
+                                        <div className="flow-node w-36 text-center px-3 py-2.5 rounded-xl cursor-pointer"
+                                            style={{ background: 'rgba(234,179,8,0.12)', border: `2px solid ${activeNode === nodes[4].section ? '#EAB308' : 'rgba(234,179,8,0.3)'}` }}
+                                            onClick={() => setActiveNode(nodes[4].section)}>
+                                            <div className="text-xs font-medium text-yellow-400">Call Back</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="flex flex-col items-center gap-2">
+                                <div className="flow-node w-36 text-center px-3 py-2.5 rounded-xl cursor-pointer"
+                                    style={{ background: 'rgba(239,68,68,0.12)', border: `2px solid ${activeNode === nodes[2].section ? '#EF4444' : 'rgba(239,68,68,0.3)'}` }}
+                                    onClick={() => setActiveNode(nodes[2].section)}>
+                                    <div className="text-xs font-medium text-red-400">Not Interested</div>
+                                </div>
+                            </div>
+                            <div className="flex flex-col items-center gap-2">
+                                <div className="flow-node w-36 text-center px-3 py-2.5 rounded-xl cursor-pointer"
+                                    style={{ background: 'rgba(59,130,246,0.12)', border: `2px solid ${activeNode === nodes[6].section ? '#3B82F6' : 'rgba(59,130,246,0.3)'}` }}
+                                    onClick={() => setActiveNode(nodes[6].section)}>
+                                    <div className="text-xs font-medium text-blue-400">Voicemail</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Script preview panel */}
+                    <div className="w-72 rounded-xl p-4" style={{ background: '#0A0A0A', border: '1px solid #1A1A1A' }}>
+                        {activeScript ? (
+                            <>
+                                <div className="text-xs text-gray-400 mb-2 uppercase tracking-wider">{activeScript.label}</div>
+                                <p className="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed">{activeScript.body}</p>
+                            </>
+                        ) : (
+                            <p className="text-sm text-gray-500 italic">Click a node to preview the script section</p>
+                        )}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function AgentBuilderPage() {
+    const [client, setClient] = useState('');
+    const [agentName, setAgentName] = useState('Aria');
+    const [gender, setGender] = useState('Female');
+    const [callerId, setCallerId] = useState('BrokerPipeline');
+    const [phone, setPhone] = useState('');
+    const [active, setActive] = useState(true);
+    const [script, setScript] = useState(DEFAULT_SCRIPT);
+    const [editIdx, setEditIdx] = useState(null);
+    const [flowOpen, setFlowOpen] = useState(false);
+    const [saved, setSaved] = useState(false);
+
+    const updateSection = (idx, field, val) => {
+        setScript(s => s.map((sec, i) => i === idx ? { ...sec, [field]: val } : sec));
+    };
+
+    const variables = ['{{first_name}}', '{{broker_name}}', '{{agent_name}}', '{{email}}', '{{phone_number}}', '{{chosen_time}}', '{{company}}'];
+
+    const handleSave = async () => {
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2000);
+    };
+
+    return (
+        <div>
+            <div className="flex items-center justify-between mb-6">
+                <div>
+                    <h1 className="text-2xl font-bold">Agent Builder</h1>
+                    <p className="text-sm text-gray-500 mt-1">Configure the AI voice agent for each client</p>
+                </div>
+                <div className="flex gap-3">
+                    <button onClick={() => setFlowOpen(true)}
+                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors"
+                        style={{ background: 'rgba(139,92,246,0.12)', color: '#A78BFA', border: '1px solid rgba(139,92,246,0.3)' }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(139,92,246,0.2)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'rgba(139,92,246,0.12)'}>
+                        <Icon name="GitBranch" size={16} /> Test Script
+                    </button>
+                    <button onClick={handleSave}
+                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium text-white transition-colors"
+                        style={{ background: saved ? '#22C55E' : '#2563EB' }}
+                        onMouseEnter={e => { if (!saved) e.currentTarget.style.background = '#1D4ED8'; }}
+                        onMouseLeave={e => { if (!saved) e.currentTarget.style.background = '#2563EB'; }}>
+                        <Icon name={saved ? 'Check' : 'Save'} size={16} /> {saved ? 'Saved!' : 'Save Agent'}
+                    </button>
+                </div>
+            </div>
+
+            {/* Agent config */}
+            <div className="rounded-xl p-5 mb-6" style={{ background: '#111', border: '1px solid #1F1F1F' }}>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                    <div>
+                        <label className="block text-xs text-gray-400 mb-1.5">Client</label>
+                        <select value={client} onChange={e => setClient(e.target.value)}
+                            className="w-full rounded-lg px-3 py-2.5 text-sm" style={IS} onFocus={fb} onBlur={bb}>
+                            <option value="">Choose a client...</option>
+                            {MOCK_CLIENTS.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-xs text-gray-400 mb-1.5">Agent Name</label>
+                        <input value={agentName} onChange={e => setAgentName(e.target.value)}
+                            placeholder="e.g. Aria, James, Sarah"
+                            className="w-full rounded-lg px-3 py-2.5 text-sm" style={IS} onFocus={fb} onBlur={bb} />
+                    </div>
+                    <div>
+                        <label className="block text-xs text-gray-400 mb-1.5">Agent Gender</label>
+                        <select value={gender} onChange={e => setGender(e.target.value)}
+                            className="w-full rounded-lg px-3 py-2.5 text-sm" style={IS} onFocus={fb} onBlur={bb}>
+                            <option value="Female">Female</option>
+                            <option value="Male">Male</option>
+                        </select>
+                    </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label className="block text-xs text-gray-400 mb-1.5">Caller ID Display Name</label>
+                        <input value={callerId} onChange={e => setCallerId(e.target.value)}
+                            className="w-full rounded-lg px-3 py-2.5 text-sm" style={IS} onFocus={fb} onBlur={bb} />
+                    </div>
+                    <div>
+                        <label className="block text-xs text-gray-400 mb-1.5">US Phone Number (Twilio)</label>
+                        <input value={phone} onChange={e => setPhone(e.target.value)}
+                            placeholder="+1 (555) 000-0000"
+                            className="w-full rounded-lg px-3 py-2.5 text-sm" style={IS} onFocus={fb} onBlur={bb} />
+                    </div>
+                    <div>
+                        <label className="block text-xs text-gray-400 mb-1.5">Agent Status</label>
+                        <button onClick={() => setActive(!active)}
+                            className="flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium w-full"
+                            style={{ background: '#0A0A0A', border: '1px solid #1A1A1A' }}>
+                            <div className="w-10 h-5 rounded-full relative transition-colors" style={{ background: active ? '#2563EB' : '#333' }}>
+                                <div className="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all" style={{ left: active ? '22px' : '2px' }} />
+                            </div>
+                            <span style={{ color: active ? '#22C55E' : '#EF4444' }}>{active ? 'Active' : 'Paused'}</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            {/* Script editor */}
+            <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold">Script Sections</h2>
+                <div className="flex flex-wrap gap-1.5">
+                    {variables.map(v => (
+                        <span key={v} className="px-2 py-0.5 rounded text-[10px] font-mono"
+                            style={{ background: 'rgba(37,99,235,0.1)', color: '#60A5FA', border: '1px solid rgba(37,99,235,0.2)' }}>
+                            {v}
+                        </span>
+                    ))}
+                </div>
+            </div>
+
+            <div className="space-y-3">
+                {script.map((sec, idx) => (
+                    <div key={sec.id} className="rounded-xl overflow-hidden" style={{ background: '#111', border: '1px solid #1F1F1F' }}>
+                        <div className="flex items-center justify-between px-5 py-3 cursor-pointer"
+                            style={{ borderBottom: editIdx === idx ? '1px solid #1F1F1F' : 'none' }}
+                            onClick={() => setEditIdx(editIdx === idx ? null : idx)}>
+                            <div className="flex items-center gap-3">
+                                <Icon name={editIdx === idx ? 'ChevronDown' : 'ChevronRight'} size={14} color="#555" />
+                                <span className="text-xs font-bold uppercase tracking-wider text-yellow-500">{sec.label}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <span className="text-[10px] text-gray-600">{sec.body.length} chars</span>
+                            </div>
+                        </div>
+                        {editIdx === idx && (
+                            <div className="p-5">
+                                <textarea value={sec.body}
+                                    onChange={e => updateSection(idx, 'body', e.target.value)}
+                                    rows={6}
+                                    className="w-full rounded-lg px-4 py-3 text-sm leading-relaxed resize-y"
+                                    style={{ ...IS, minHeight: 120 }} onFocus={fb} onBlur={bb} />
+                            </div>
+                        )}
+                    </div>
+                ))}
+            </div>
+
+            <ScriptFlowModal open={flowOpen} onClose={() => setFlowOpen(false)} script={script} />
+        </div>
+    );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// SECTION 2 — Call Triggers
+// ════════════════════════════════════════════════════════════════════════════
+
+function CallTriggersPage() {
+    const [triggers, setTriggers] = useState(MOCK_TRIGGERS);
+    const [saved, setSaved] = useState(false);
+
+    const toggle = (id) => setTriggers(ts => ts.map(t => t.id === id ? { ...t, enabled: !t.enabled } : t));
+    const setDelay = (id, val) => setTriggers(ts => ts.map(t => t.id === id ? { ...t, delay: parseInt(val) || 0 } : t));
+
+    const triggerIcons = { 't1': 'MailOpen', 't2': 'MessageSquare', 't3': 'Clock', 't4': 'TrendingUp', 't5': 'PhoneMissed' };
+
+    return (
+        <div>
+            <div className="flex items-center justify-between mb-6">
+                <div>
+                    <h1 className="text-2xl font-bold">Call Triggers</h1>
+                    <p className="text-sm text-gray-500 mt-1">Configure when the voice agent calls automatically</p>
+                </div>
+                <button onClick={() => { setSaved(true); setTimeout(() => setSaved(false), 2000); }}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium text-white transition-colors"
+                    style={{ background: saved ? '#22C55E' : '#2563EB' }}>
+                    <Icon name={saved ? 'Check' : 'Save'} size={16} /> {saved ? 'Saved!' : 'Save Triggers'}
+                </button>
+            </div>
+
+            <div className="space-y-4">
+                {triggers.map(t => (
+                    <div key={t.id} className="rounded-xl p-5" style={{ background: '#111', border: `1px solid ${t.enabled ? '#1F1F1F' : '#1A1A1A'}`, opacity: t.enabled ? 1 : 0.6 }}>
+                        <div className="flex items-start gap-4">
+                            <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
+                                style={{ background: t.enabled ? 'rgba(37,99,235,0.12)' : 'rgba(255,255,255,0.04)' }}>
+                                <Icon name={triggerIcons[t.id] || 'Zap'} size={18} color={t.enabled ? '#2563EB' : '#555'} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-3 mb-1">
+                                    <h3 className="font-semibold text-sm">{t.name}</h3>
+                                    <Badge status={t.enabled ? 'Active' : 'Paused'} />
+                                </div>
+                                <p className="text-xs text-gray-500 mb-3">{t.description}</p>
+                                <div className="flex items-center gap-6 flex-wrap">
+                                    <div className="flex items-center gap-2">
+                                        <label className="text-xs text-gray-400">Delay:</label>
+                                        <input type="number" value={t.delay} onChange={e => setDelay(t.id, e.target.value)}
+                                            className="w-20 rounded-lg px-3 py-1.5 text-sm text-center" style={IS} onFocus={fb} onBlur={bb} />
+                                        <span className="text-xs text-gray-500">{t.unit}</span>
+                                    </div>
+                                    <div className="text-xs text-gray-500">
+                                        Last triggered: <span className="text-gray-400">{new Date(t.lastTriggered).toLocaleString()}</span>
+                                    </div>
+                                    <div className="text-xs text-gray-500">
+                                        Total calls: <span className="text-blue-400 font-medium">{t.totalCalls}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <button onClick={() => toggle(t.id)} className="flex-shrink-0 mt-1">
+                                <div className="w-11 h-6 rounded-full relative transition-colors cursor-pointer"
+                                    style={{ background: t.enabled ? '#2563EB' : '#333' }}>
+                                    <div className="absolute top-1 w-4 h-4 rounded-full bg-white transition-all"
+                                        style={{ left: t.enabled ? '24px' : '4px' }} />
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// SECTION 3 — Call Log
+// ════════════════════════════════════════════════════════════════════════════
+
+function CallLogPage() {
+    const [search, setSearch] = useState('');
+    const [clientFilter, setClientFilter] = useState('');
+    const [outcomeFilter, setOutcomeFilter] = useState('');
+    const [dateFrom, setDateFrom] = useState('');
+    const [dateTo, setDateTo] = useState('');
+
+    const filtered = useMemo(() => {
+        return MOCK_CALLS.filter(c => {
+            if (search && !c.lead_name.toLowerCase().includes(search.toLowerCase()) && !c.lead_phone.includes(search)) return false;
+            if (clientFilter && c.client !== clientFilter) return false;
+            if (outcomeFilter && c.outcome !== outcomeFilter) return false;
+            if (dateFrom && new Date(c.datetime) < new Date(dateFrom)) return false;
+            if (dateTo && new Date(c.datetime) > new Date(dateTo + 'T23:59:59')) return false;
+            return true;
+        });
+    }, [search, clientFilter, outcomeFilter, dateFrom, dateTo]);
+
+    const pag = usePagination(filtered);
+
+    const fmtDuration = (s) => {
+        const m = Math.floor(s / 60), sec = s % 60;
+        return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
+    };
+
+    const stats = useMemo(() => {
+        const thisMonth = MOCK_CALLS;
+        const booked = thisMonth.filter(c => c.outcome === 'Booked').length;
+        const totalDur = thisMonth.reduce((a, c) => a + c.duration, 0);
+        const vms = thisMonth.filter(c => c.outcome === 'Voicemail').length;
+        return {
+            total: thisMonth.length,
+            bookedRate: thisMonth.length > 0 ? ((booked / thisMonth.length) * 100).toFixed(1) : '0',
+            avgDuration: thisMonth.length > 0 ? fmtDuration(Math.round(totalDur / thisMonth.length)) : '0s',
+            voicemails: vms,
+        };
+    }, []);
+
+    const exportCSV = () => {
+        const header = 'Date/Time,Lead Name,Lead Phone,Client,Duration,Outcome,Notes\n';
+        const rows = filtered.map(c =>
+            `"${new Date(c.datetime).toLocaleString()}","${c.lead_name}","${c.lead_phone}","${c.client}","${fmtDuration(c.duration)}","${c.outcome}","${c.notes}"`
+        ).join('\n');
+        const blob = new Blob([header + rows], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'call-log.csv'; a.click();
+        URL.revokeObjectURL(url);
+    };
+
+    return (
+        <div>
+            <div className="flex items-center justify-between mb-6">
+                <div>
+                    <h1 className="text-2xl font-bold">Call Log</h1>
+                    <p className="text-sm text-gray-500 mt-1">{filtered.length} calls total</p>
+                </div>
+                <button onClick={exportCSV}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors"
+                    style={{ background: 'rgba(37,99,235,0.1)', color: '#2563EB', border: '1px solid rgba(37,99,235,0.25)' }}>
+                    <Icon name="Download" size={16} /> Export CSV
+                </button>
+            </div>
+
+            {/* Summary cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                {[
+                    { label: 'Total Calls This Month', value: stats.total, icon: 'Phone' },
+                    { label: 'Booked Rate', value: stats.bookedRate + '%', icon: 'Target' },
+                    { label: 'Avg Call Duration', value: stats.avgDuration, icon: 'Clock' },
+                    { label: 'Voicemails Left', value: stats.voicemails, icon: 'Voicemail' },
+                ].map((s, i) => (
+                    <div key={i} className="rounded-xl p-4" style={{ background: '#111', border: '1px solid #1F1F1F' }}>
+                        <div className="flex items-center justify-between mb-3">
+                            <span className="text-xs text-gray-500">{s.label}</span>
+                            <Icon name={s.icon} size={16} color="#333" />
+                        </div>
+                        <div className="text-2xl font-bold">{s.value}</div>
+                    </div>
+                ))}
+            </div>
+
+            {/* Filters */}
+            <div className="flex flex-wrap gap-3 mb-4">
+                <div className="relative flex-1 min-w-[200px]">
+                    <Icon name="Search" size={14} color="#555" className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input value={search} onChange={e => setSearch(e.target.value)}
+                        placeholder="Search by name or phone..."
+                        className="w-full rounded-lg pl-9 pr-3 py-2.5 text-sm" style={IS} onFocus={fb} onBlur={bb} />
+                </div>
+                <select value={clientFilter} onChange={e => setClientFilter(e.target.value)}
+                    className="rounded-lg px-3 py-2.5 text-sm" style={IS}>
+                    <option value="">All Clients</option>
+                    {MOCK_CLIENTS.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                </select>
+                <select value={outcomeFilter} onChange={e => setOutcomeFilter(e.target.value)}
+                    className="rounded-lg px-3 py-2.5 text-sm" style={IS}>
+                    <option value="">All Outcomes</option>
+                    {['Booked', 'Not Interested', 'No Answer', 'Voicemail', 'Call Back'].map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+                <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+                    className="rounded-lg px-3 py-2.5 text-sm" style={IS} onFocus={fb} onBlur={bb} />
+                <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+                    className="rounded-lg px-3 py-2.5 text-sm" style={IS} onFocus={fb} onBlur={bb} />
+            </div>
+
+            {/* Table */}
+            <div className="rounded-xl overflow-hidden" style={{ background: '#111', border: '1px solid #1F1F1F' }}>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                        <thead>
+                            <tr style={{ borderBottom: '1px solid #1F1F1F' }}>
+                                {['Date/Time', 'Lead Name', 'Lead Phone', 'Client', 'Duration', 'Outcome', '', 'Notes'].map(h => (
+                                    <th key={h} className="px-4 py-3 text-left text-xs text-gray-500 font-medium">{h}</th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {pag.rows.map(c => (
+                                <tr key={c.id} className="tbl-row" style={{ borderBottom: '1px solid #1A1A1A' }}>
+                                    <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">{new Date(c.datetime).toLocaleString()}</td>
+                                    <td className="px-4 py-3 font-medium whitespace-nowrap">{c.lead_name}</td>
+                                    <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">{c.lead_phone}</td>
+                                    <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">{c.client}</td>
+                                    <td className="px-4 py-3 text-xs whitespace-nowrap">{fmtDuration(c.duration)}</td>
+                                    <td className="px-4 py-3 whitespace-nowrap"><Badge status={c.outcome} /></td>
+                                    <td className="px-4 py-3">
+                                        <button className="text-gray-500 hover:text-blue-400 transition-colors" title="Play recording">
+                                            <Icon name="Play" size={14} />
+                                        </button>
+                                    </td>
+                                    <td className="px-4 py-3 text-xs text-gray-500 max-w-[250px] truncate">{c.notes}</td>
+                                </tr>
+                            ))}
+                            {pag.rows.length === 0 && (
+                                <tr><td colSpan={8} className="px-4 py-12 text-center text-gray-600">No calls match your filters</td></tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+                {pag.totalPages > 1 && (
+                    <div className="flex items-center justify-between px-4 py-3" style={{ borderTop: '1px solid #1F1F1F' }}>
+                        <span className="text-xs text-gray-500">Page {pag.page} of {pag.totalPages} ({pag.total} calls)</span>
+                        <div className="flex gap-1">
+                            <button onClick={() => pag.setPage(Math.max(1, pag.page - 1))} disabled={pag.page === 1}
+                                className="px-3 py-1.5 rounded text-xs disabled:opacity-30" style={{ background: '#1A1A1A' }}>Prev</button>
+                            <button onClick={() => pag.setPage(Math.min(pag.totalPages, pag.page + 1))} disabled={pag.page === pag.totalPages}
+                                className="px-3 py-1.5 rounded text-xs disabled:opacity-30" style={{ background: '#1A1A1A' }}>Next</button>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// SECTION 4 — Booking Confirmation
+// ════════════════════════════════════════════════════════════════════════════
+
+function BookingEmailModal({ open, onClose, booking }) {
+    if (!open || !booking) return null;
+    const d = new Date(booking.meeting_date);
+    const dateStr = d.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const timeStr = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+            <div className="absolute inset-0 bg-black/70" />
+            <div className="relative w-full max-w-lg rounded-2xl p-6" style={{ background: '#111', border: '1px solid #1F1F1F' }}
+                onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold">Email Preview</h3>
+                    <button onClick={onClose} className="text-gray-500 hover:text-white"><Icon name="X" size={20} /></button>
+                </div>
+                <div className="rounded-xl p-5" style={{ background: '#0A0A0A', border: '1px solid #1A1A1A' }}>
+                    <div className="text-xs text-gray-500 mb-1">Subject:</div>
+                    <div className="text-sm font-medium mb-4">Your call with {booking.client} is confirmed ✓</div>
+                    <div className="text-sm text-gray-300 leading-relaxed space-y-3">
+                        <p>Hi {booking.prospect.name},</p>
+                        <p>Your call with {booking.client} is confirmed for:</p>
+                        <div className="pl-2 space-y-1">
+                            <div>📅 {dateStr}</div>
+                            <div>🕐 {timeStr} Eastern Time</div>
+                            <div>📞 Meeting link will be sent separately</div>
+                        </div>
+                        <p>Talk soon,<br />The BrokerPipeline Team</p>
+                    </div>
+                </div>
+                <div className="flex justify-end mt-4 gap-3">
+                    <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm text-gray-400"
+                        style={{ border: '1px solid #1F1F1F' }}>Close</button>
+                    <button onClick={onClose}
+                        className="px-4 py-2 rounded-lg text-sm font-medium text-white"
+                        style={{ background: '#2563EB' }}>
+                        Send Email
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function BookingsPage() {
+    const [bookings, setBookings] = useState(MOCK_BOOKINGS);
+    const [emailModal, setEmailModal] = useState(null);
+    const [sentReminders, setSentReminders] = useState({});
+
+    const updateStatus = (id, status) => {
+        setBookings(bs => bs.map(b => b.id === id ? { ...b, status } : b));
+    };
+
+    const sendReminder = (booking) => {
+        setEmailModal(booking);
+        setSentReminders(prev => ({ ...prev, [booking.id]: true }));
+    };
+
+    return (
+        <div>
+            <div className="mb-6">
+                <h1 className="text-2xl font-bold">Booking Confirmations</h1>
+                <p className="text-sm text-gray-500 mt-1">{bookings.length} upcoming bookings</p>
+            </div>
+
+            <div className="grid gap-4">
+                {bookings.map(b => {
+                    const d = new Date(b.meeting_date);
+                    const dateStr = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+                    const timeStr = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
+                    return (
+                        <div key={b.id} className="rounded-xl p-5" style={{ background: '#111', border: '1px solid #1F1F1F' }}>
+                            <div className="flex flex-col md:flex-row gap-5">
+                                {/* Date block */}
+                                <div className="flex-shrink-0 w-32 text-center rounded-xl p-4" style={{ background: '#0A0A0A', border: '1px solid #1A1A1A' }}>
+                                    <div className="text-2xl font-bold text-blue-400">{d.getDate()}</div>
+                                    <div className="text-xs text-gray-400 uppercase">{d.toLocaleDateString('en-US', { month: 'short', weekday: 'short' })}</div>
+                                    <div className="text-sm font-medium mt-1">{timeStr}</div>
+                                    <div className="text-[10px] text-gray-500">Eastern</div>
+                                </div>
+
+                                {/* Details */}
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-start justify-between mb-3">
+                                        <div>
+                                            <h3 className="font-semibold text-base">{b.prospect.name}</h3>
+                                            <p className="text-xs text-gray-400">{b.prospect.company}</p>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <Badge status={b.status} />
+                                            <select value={b.status} onChange={e => updateStatus(b.id, e.target.value)}
+                                                className="rounded px-2 py-1 text-[10px]" style={{ background: '#0A0A0A', border: '1px solid #1A1A1A', color: '#9CA3AF' }}>
+                                                <option value="Confirmed">Confirmed</option>
+                                                <option value="Rescheduled">Rescheduled</option>
+                                                <option value="No-show">No-show</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3 text-xs">
+                                        <div>
+                                            <span className="text-gray-500">Broker:</span>
+                                            <div className="text-gray-300 font-medium">{b.client}</div>
+                                        </div>
+                                        <div>
+                                            <span className="text-gray-500">Reached via:</span>
+                                            <div className="text-gray-300 font-medium">{b.channel}</div>
+                                        </div>
+                                        <div>
+                                            <span className="text-gray-500">Phone:</span>
+                                            <div className="text-gray-300 font-medium">{b.prospect.phone}</div>
+                                        </div>
+                                        <div>
+                                            <span className="text-gray-500">Email:</span>
+                                            <div className="text-gray-300 font-medium truncate">{b.prospect.email}</div>
+                                        </div>
+                                    </div>
+
+                                    <div className="rounded-lg p-3 mb-3" style={{ background: '#0A0A0A', border: '1px solid #1A1A1A' }}>
+                                        <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">AI Call Summary</div>
+                                        <p className="text-xs text-gray-400 leading-relaxed">{b.summary}</p>
+                                    </div>
+
+                                    <button onClick={() => sendReminder(b)}
+                                        className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-medium transition-colors"
+                                        style={{
+                                            background: sentReminders[b.id] ? 'rgba(34,197,94,0.1)' : 'rgba(37,99,235,0.1)',
+                                            color: sentReminders[b.id] ? '#22C55E' : '#2563EB',
+                                            border: `1px solid ${sentReminders[b.id] ? 'rgba(34,197,94,0.25)' : 'rgba(37,99,235,0.25)'}`,
+                                        }}>
+                                        <Icon name={sentReminders[b.id] ? 'Check' : 'Send'} size={13} />
+                                        {sentReminders[b.id] ? 'Reminder Sent' : 'Send Reminder'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+
+            <BookingEmailModal open={!!emailModal} onClose={() => setEmailModal(null)} booking={emailModal} />
+        </div>
+    );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// APP
+// ════════════════════════════════════════════════════════════════════════════
+
+function App() {
+    const [page, setPage] = useState('builder');
+    const [sbOpen, setSbOpen] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [demoMode, setDemoMode] = useState(false);
+
+    useEffect(() => {
+        (async () => {
+            if (!sb) { setDemoMode(true); setLoading(false); return; }
+            try {
+                const { data: { session }, error } = await sb.auth.getSession();
+                if (error || !session || session.user.email !== ADMIN_EMAIL) {
+                    setDemoMode(true);
+                }
+            } catch(e) { setDemoMode(true); }
+            setLoading(false);
+        })();
+    }, []);
+
+    if (loading) return (
+        <div className="h-full flex items-center justify-center">
+            <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        </div>
+    );
+
+    const pages = { builder: AgentBuilderPage, triggers: CallTriggersPage, calls: CallLogPage, bookings: BookingsPage };
+    const Page = pages[page] || AgentBuilderPage;
+
+    return (
+        <div className="h-full flex">
+            <Sidebar page={page} setPage={setPage} open={sbOpen} setOpen={setSbOpen} />
+            <main className="flex-1 md:ml-60 min-h-full">
+                <header className="h-14 flex items-center justify-between px-5 sticky top-0 z-10"
+                    style={{ background: '#0A0A0A', borderBottom: '1px solid #1A1A1A' }}>
+                    <div className="flex items-center gap-3">
+                        <button className="md:hidden text-gray-400" onClick={() => setSbOpen(true)}>
+                            <Icon name="Menu" size={20} />
+                        </button>
+                        <span className="text-sm text-gray-500">Voice Agent</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        {demoMode && (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">Demo Mode</span>
+                        )}
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
+                            style={{ background: 'rgba(139,92,246,0.15)', color: '#A78BFA', border: '1px solid rgba(139,92,246,0.25)' }}>A</div>
+                    </div>
+                </header>
+                <div className="p-6 max-w-6xl">
+                    <Page />
+                </div>
+            </main>
+        </div>
+    );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

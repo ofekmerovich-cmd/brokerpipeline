@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin — BrokerPipeline.ai</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body, #root { height: 100%; }
+        body {
+            background: #0A0A0A;
+            color: #fff;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #2A2A2A; border-radius: 99px; }
+        .sidebar { transition: transform 0.25s cubic-bezier(.4,0,.2,1); }
+        input:focus, textarea:focus, select:focus { outline: none; }
+        .tbl-row:hover { background: rgba(255,255,255,0.025); }
+    </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+// ── Supabase ─────────────────────────────────────────────────────────────────
+const SUPABASE_URL      = 'https://glokxezbcrelrndcbhhs.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdsb2t4ZXpiY3JlbHJuZGNiaGhzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5NzMxNzEsImV4cCI6MjA5MzU0OTE3MX0.imnH5pmrXpiKz18fzxyF78b23luNNmu9izM3yBSlbQ4';
+
+const ADMIN_EMAIL = 'admin@brokerpipeline.ai';
+
+let sb = null;
+try {
+    if (typeof supabase !== 'undefined' && supabase.createClient) {
+        sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    }
+} catch(e) { console.warn('Supabase init failed:', e); }
+
+// ── Icon ─────────────────────────────────────────────────────────────────────
+function Icon({ name, size = 18, color = 'currentColor', className = '' }) {
+    const ref = useRef(null);
+    useEffect(() => {
+        if (!ref.current || !lucide?.icons?.[name]) return;
+        ref.current.innerHTML = '';
+        const svg = lucide.createElement(lucide.icons[name]);
+        svg.setAttribute('width', size);
+        svg.setAttribute('height', size);
+        svg.setAttribute('stroke', color);
+        svg.style.display = 'block';
+        svg.style.flexShrink = '0';
+        ref.current.appendChild(svg);
+    }, [name, size, color]);
+    return <span ref={ref} className={`inline-flex items-center ${className}`} />;
+}
+
+// ── Badge ────────────────────────────────────────────────────────────────────
+const BADGE = {
+    Active:  'bg-green-500/15 text-green-400 border-green-500/25',
+    Paused:  'bg-yellow-500/15 text-yellow-400 border-yellow-500/25',
+    Churned: 'bg-red-500/15 text-red-400 border-red-500/25',
+    Starter: 'bg-gray-500/15 text-gray-400 border-gray-500/25',
+    Growth:  'bg-blue-500/15 text-blue-400 border-blue-500/25',
+    Scale:   'bg-purple-500/15 text-purple-400 border-purple-500/25',
+};
+function Badge({ status }) {
+    return (
+        <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium border ${BADGE[status] || 'bg-gray-500/15 text-gray-400 border-gray-500/25'}`}>
+            {status}
+        </span>
+    );
+}
+
+// ── Mock data ────────────────────────────────────────────────────────────────
+const MOCK_CLIENTS = [
+    { id: 'u1', name: 'John Smith',      email: 'john@smithinsurance.com',     plan: 'Growth',  start_date: '2026-03-15', status: 'Active',  leads_sent: 58, appointments: 7,  mrr: 3497 },
+    { id: 'u2', name: 'Sarah Johnson',   email: 'sarah@johnsonbrokers.com',    plan: 'Scale',   start_date: '2026-02-01', status: 'Active',  leads_sent: 142,appointments: 18, mrr: 6997 },
+    { id: 'u3', name: 'Mike Davis',      email: 'mike@davisagency.com',        plan: 'Starter', start_date: '2026-04-10', status: 'Active',  leads_sent: 19, appointments: 2,  mrr: 1497 },
+    { id: 'u4', name: 'Lisa Chen',       email: 'lisa@cheninsurance.com',      plan: 'Growth',  start_date: '2026-01-20', status: 'Paused',  leads_sent: 0,  appointments: 0,  mrr: 0 },
+    { id: 'u5', name: 'Robert Williams', email: 'robert@williamscoverage.com', plan: 'Growth',  start_date: '2026-03-01', status: 'Active',  leads_sent: 45, appointments: 5,  mrr: 3497 },
+    { id: 'u6', name: 'Emma Taylor',     email: 'emma@taylorbrokers.com',      plan: 'Scale',   start_date: '2025-12-15', status: 'Churned', leads_sent: 0,  appointments: 0,  mrr: 0 },
+    { id: 'u7', name: 'David Brown',     email: 'david@brownagency.com',       plan: 'Starter', start_date: '2026-04-25', status: 'Active',  leads_sent: 12, appointments: 1,  mrr: 1497 },
+    { id: 'u8', name: 'Jennifer Martinez',email:'jennifer@martinezins.com',    plan: 'Growth',  start_date: '2026-02-14', status: 'Active',  leads_sent: 61, appointments: 8,  mrr: 3497 },
+];
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function fmtDate(d) {
+    return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function downloadCSV(data, filename) {
+    if (!data.length) return;
+    const headers = Object.keys(data[0]);
+    const rows = data.map(row =>
+        headers.map(h => `"${String(row[h] ?? '').replace(/"/g,'""')}"`).join(',')
+    );
+    const csv = [headers.join(','), ...rows].join('\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    Object.assign(document.createElement('a'), { href: url, download: filename }).click();
+    URL.revokeObjectURL(url);
+}
+
+// ── Sidebar ──────────────────────────────────────────────────────────────────
+const NAV = [
+    { id: 'clients',   label: 'Clients Overview', icon: 'Users' },
+    { id: 'addleads',  label: 'Add Leads',        icon: 'UserPlus' },
+    { id: 'settings',  label: 'Client Settings',  icon: 'Settings' },
+    { id: 'leadmachine', label: 'Lead Machine', icon: 'Zap', href: 'lead-machine.html' },
+    { id: 'voiceagent', label: 'Voice Agent', icon: 'Bot', href: 'voice-agent.html' },
+    { id: 'analytics', label: 'Analytics', icon: 'BarChart3', href: 'analytics.html' },
+    { id: 'integrations', label: 'Integrations', icon: 'Plug', href: 'integrations.html' },
+];
+
+function Sidebar({ page, setPage, open, setOpen }) {
+    return (
+        <>
+            {open && (
+                <div className="fixed inset-0 bg-black/60 z-20 md:hidden" onClick={() => setOpen(false)} />
+            )}
+            <aside
+                className={`sidebar fixed inset-y-0 left-0 z-30 w-60 flex flex-col
+                    ${open ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}
+                style={{ background: '#0D0D0D', borderRight: '1px solid #1A1A1A' }}
+            >
+                <div className="h-14 flex items-center px-5" style={{ borderBottom: '1px solid #1A1A1A' }}>
+                    <a href="index.html" className="text-base font-bold">
+                        BrokerPipeline<span style={{ color: '#2563EB' }}>.ai</span>
+                    </a>
+                    <span className="ml-2 px-2 py-0.5 rounded text-[10px] font-bold" style={{ background: 'rgba(239,68,68,0.15)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.25)' }}>
+                        ADMIN
+                    </span>
+                </div>
+
+                <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
+                    {NAV.map(item => {
+                        const active = page === item.id;
+                        return (
+                            <button
+                                key={item.id}
+                                onClick={() => { if (item.href) { window.location.href = item.href; return; } setPage(item.id); setOpen(false); }}
+                                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-left transition-colors"
+                                style={{
+                                    background: active ? 'rgba(37,99,235,0.1)' : 'transparent',
+                                    color: active ? '#2563EB' : '#9CA3AF',
+                                }}
+                                onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; e.currentTarget.style.color = active ? '#2563EB' : '#fff'; }}
+                                onMouseLeave={e => { e.currentTarget.style.background = active ? 'rgba(37,99,235,0.1)' : 'transparent'; e.currentTarget.style.color = active ? '#2563EB' : '#9CA3AF'; }}
+                            >
+                                <Icon name={item.icon} size={16} color={active ? '#2563EB' : 'currentColor'} />
+                                {item.label}
+                            </button>
+                        );
+                    })}
+                </nav>
+
+                <div className="px-4 py-3" style={{ borderTop: '1px solid #1A1A1A' }}>
+                    <button
+                        onClick={() => { window.location.href = 'login.html'; }}
+                        className="flex items-center gap-2 text-xs text-gray-500 hover:text-white transition-colors"
+                    >
+                        <Icon name="LogOut" size={14} />
+                        Sign Out
+                    </button>
+                </div>
+            </aside>
+        </>
+    );
+}
+
+// ── Top bar ──────────────────────────────────────────────────────────────────
+function TopBar({ open, setOpen }) {
+    return (
+        <header
+            className="h-14 flex items-center justify-between px-5 shrink-0"
+            style={{ borderBottom: '1px solid #1A1A1A', background: '#0A0A0A' }}
+        >
+            <div className="flex items-center gap-3">
+                <button onClick={() => setOpen(!open)} className="md:hidden text-gray-400 hover:text-white transition-colors">
+                    <Icon name="Menu" size={20} />
+                </button>
+                <span className="text-sm text-gray-400">
+                    Admin Panel
+                </span>
+            </div>
+            <div
+                className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
+                style={{ background: '#EF4444' }}
+            >
+                A
+            </div>
+        </header>
+    );
+}
+
+// ── Stat Card ────────────────────────────────────────────────────────────────
+function StatCard({ label, value, icon, iconColor, iconBg }) {
+    return (
+        <div className="rounded-xl p-5" style={{ background: '#111', border: '1px solid #1A1A1A' }}>
+            <div className="flex items-center justify-between mb-4">
+                <span className="text-xs text-gray-500">{label}</span>
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: iconBg }}>
+                    <Icon name={icon} size={16} color={iconColor} />
+                </div>
+            </div>
+            <div className="text-2xl font-bold">{value}</div>
+        </div>
+    );
+}
+
+// ── PAGE 1: Clients Overview ─────────────────────────────────────────────────
+function ClientsPage({ clients }) {
+    const [search, setSearch] = useState('');
+    const [statusFilter, setStatusFilter] = useState('All');
+
+    const active      = clients.filter(c => c.status === 'Active');
+    const totalMRR    = active.reduce((s, c) => s + c.mrr, 0);
+    const totalLeads  = clients.reduce((s, c) => s + c.leads_sent, 0);
+    const totalAppts  = clients.reduce((s, c) => s + c.appointments, 0);
+
+    const filtered = clients.filter(c => {
+        const q = search.toLowerCase();
+        const matchText = !q || c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q);
+        const matchStatus = statusFilter === 'All' || c.status === statusFilter;
+        return matchText && matchStatus;
+    });
+
+    return (
+        <div className="space-y-6">
+            <div>
+                <h1 className="text-lg font-semibold">Clients Overview</h1>
+                <p className="text-sm text-gray-500 mt-0.5">{clients.length} total clients</p>
+            </div>
+
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <StatCard label="Active Clients"         value={active.length}         icon="Users"        iconColor="#22C55E" iconBg="rgba(34,197,94,0.12)" />
+                <StatCard label="Total MRR"              value={`$${totalMRR.toLocaleString()}`} icon="DollarSign"  iconColor="#2563EB" iconBg="rgba(37,99,235,0.12)" />
+                <StatCard label="Leads Sent This Month"  value={totalLeads}            icon="Send"         iconColor="#9CA3AF" iconBg="rgba(156,163,175,0.12)" />
+                <StatCard label="Appointments Booked"    value={totalAppts}            icon="CalendarCheck" iconColor="#EAB308" iconBg="rgba(234,179,8,0.12)" />
+            </div>
+
+            {/* Filters */}
+            <div className="flex flex-col sm:flex-row gap-3">
+                <div className="relative flex-1">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none">
+                        <Icon name="Search" size={15} />
+                    </span>
+                    <input
+                        type="text" placeholder="Search by name or email…"
+                        value={search} onChange={e => setSearch(e.target.value)}
+                        className="w-full rounded-lg pl-9 pr-4 py-2.5 text-sm text-white placeholder-gray-600 transition-colors"
+                        style={{ background: '#111', border: '1px solid #1A1A1A' }}
+                        onFocus={e => e.target.style.borderColor = '#2563EB'}
+                        onBlur={e => e.target.style.borderColor = '#1A1A1A'}
+                    />
+                </div>
+                <select
+                    value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+                    className="rounded-lg px-3 py-2.5 text-sm text-gray-300 transition-colors"
+                    style={{ background: '#111', border: '1px solid #1A1A1A', color: '#ccc' }}
+                    onFocus={e => e.target.style.borderColor = '#2563EB'}
+                    onBlur={e => e.target.style.borderColor = '#1A1A1A'}
+                >
+                    {['All','Active','Paused','Churned'].map(s =>
+                        <option key={s} value={s} style={{ background: '#111' }}>{s}</option>
+                    )}
+                </select>
+                <button
+                    onClick={() => downloadCSV(filtered, 'clients.csv')}
+                    className="flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm text-gray-300 hover:text-white transition-colors"
+                    style={{ border: '1px solid #1A1A1A' }}
+                >
+                    <Icon name="Download" size={15} /> Export
+                </button>
+            </div>
+
+            {/* Table */}
+            <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #1A1A1A' }}>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                        <thead>
+                            <tr style={{ borderBottom: '1px solid #1A1A1A', background: '#0D0D0D' }}>
+                                {['Name','Email','Plan','Start Date','Status','Leads Sent','Appts','MRR'].map(h => (
+                                    <th key={h} className="px-4 py-3 text-left text-xs font-medium whitespace-nowrap"
+                                        style={{ color: '#555', letterSpacing: '0.05em' }}>
+                                        {h}
+                                    </th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {filtered.length === 0 ? (
+                                <tr>
+                                    <td colSpan={8} className="px-4 py-10 text-center text-sm text-gray-500">
+                                        No clients match your search
+                                    </td>
+                                </tr>
+                            ) : filtered.map((c, i) => (
+                                <tr key={c.id} className="tbl-row transition-colors"
+                                    style={{ borderBottom: i < filtered.length - 1 ? '1px solid #141414' : 'none', background: '#111' }}>
+                                    <td className="px-4 py-3 font-medium whitespace-nowrap">{c.name}</td>
+                                    <td className="px-4 py-3 whitespace-nowrap" style={{ color: '#9CA3AF' }}>{c.email}</td>
+                                    <td className="px-4 py-3 whitespace-nowrap"><Badge status={c.plan} /></td>
+                                    <td className="px-4 py-3 whitespace-nowrap" style={{ color: '#9CA3AF' }}>{fmtDate(c.start_date)}</td>
+                                    <td className="px-4 py-3 whitespace-nowrap"><Badge status={c.status} /></td>
+                                    <td className="px-4 py-3 whitespace-nowrap" style={{ color: '#9CA3AF' }}>{c.leads_sent}</td>
+                                    <td className="px-4 py-3 whitespace-nowrap" style={{ color: '#9CA3AF' }}>{c.appointments}</td>
+                                    <td className="px-4 py-3 whitespace-nowrap font-semibold" style={{ color: c.mrr > 0 ? '#22C55E' : '#555' }}>
+                                        {c.mrr > 0 ? `$${c.mrr.toLocaleString()}` : '—'}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ── PAGE 2: Add Leads ────────────────────────────────────────────────────────
+function AddLeadsPage({ clients }) {
+    const activeClients = clients.filter(c => c.status === 'Active');
+    const [selectedClient, setSelectedClient] = useState('');
+    const [mode, setMode] = useState('manual');
+    const [csvText, setCsvText] = useState('');
+    const [rows, setRows] = useState([{ name: '', company: '', email: '', phone: '', score: '7', specialty: 'Commercial' }]);
+    const [importing, setImporting] = useState(false);
+    const [result, setResult] = useState(null);
+
+    const SPECIALTIES = ['Commercial','Life','Health','Auto','Home','Medicare','Cyber','Agriculture','Professional'];
+
+    const addRow = () => setRows(prev => [...prev, { name: '', company: '', email: '', phone: '', score: '7', specialty: 'Commercial' }]);
+
+    const updateRow = (i, field, value) => {
+        setRows(prev => prev.map((r, idx) => idx === i ? { ...r, [field]: value } : r));
+    };
+
+    const removeRow = (i) => {
+        if (rows.length > 1) setRows(prev => prev.filter((_, idx) => idx !== i));
+    };
+
+    const parseCSV = (text) => {
+        const lines = text.trim().split('\n').filter(l => l.trim());
+        if (lines.length < 2) return [];
+        const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/['"]/g, ''));
+        return lines.slice(1).map(line => {
+            const vals = line.split(',').map(v => v.trim().replace(/^["']|["']$/g, ''));
+            const obj = {};
+            headers.forEach((h, i) => { obj[h] = vals[i] || ''; });
+            return {
+                name: obj.name || '',
+                company: obj.company || '',
+                email: obj.email || '',
+                phone: obj.phone || '',
+                score: obj.score || '7',
+                specialty: obj.specialty || 'Commercial',
+            };
+        });
+    };
+
+    const handleImport = async () => {
+        if (!selectedClient) return;
+        setImporting(true);
+        setResult(null);
+
+        const leadsToImport = mode === 'csv' ? parseCSV(csvText) : rows;
+        const valid = leadsToImport.filter(l => l.name && l.email);
+
+        if (valid.length === 0) {
+            setResult({ success: false, message: 'No valid leads found. Each lead needs at least a name and email.' });
+            setImporting(false);
+            return;
+        }
+
+        try {
+            if (sb) {
+                const payload = valid.map(l => ({
+                    user_id: selectedClient,
+                    name: l.name,
+                    company: l.company,
+                    email: l.email,
+                    phone: l.phone,
+                    score: parseInt(l.score) || 7,
+                    specialty: l.specialty,
+                    status: 'New',
+                    date_added: new Date().toISOString().split('T')[0],
+                }));
+                const { error } = await sb.from('leads').insert(payload);
+                if (error) throw error;
+            }
+            setResult({ success: true, message: `${valid.length} lead${valid.length !== 1 ? 's' : ''} imported successfully.` });
+            if (mode === 'csv') setCsvText('');
+            else setRows([{ name: '', company: '', email: '', phone: '', score: '7', specialty: 'Commercial' }]);
+        } catch (err) {
+            setResult({ success: false, message: err.message });
+        }
+        setImporting(false);
+    };
+
+    const inputStyle = { background: '#0A0A0A', border: '1px solid #1A1A1A', color: '#e5e7eb' };
+    const focusBorder = (e) => e.target.style.borderColor = '#2563EB';
+    const blurBorder  = (e) => e.target.style.borderColor = '#1A1A1A';
+
+    return (
+        <div className="space-y-6 max-w-4xl">
+            <div>
+                <h1 className="text-lg font-semibold">Add Leads</h1>
+                <p className="text-sm text-gray-500 mt-0.5">Import leads for a client — they'll appear in the client's dashboard</p>
+            </div>
+
+            {/* Client selector */}
+            <div className="rounded-xl p-5" style={{ background: '#111', border: '1px solid #1A1A1A' }}>
+                <label className="block text-xs text-gray-400 mb-1.5">Select Client</label>
+                <select
+                    value={selectedClient} onChange={e => setSelectedClient(e.target.value)}
+                    className="w-full rounded-lg px-4 py-3 text-sm transition-colors"
+                    style={{ ...inputStyle, color: selectedClient ? '#e5e7eb' : '#6B7280' }}
+                    onFocus={focusBorder} onBlur={blurBorder}
+                >
+                    <option value="" style={{ background: '#111' }}>Choose a client…</option>
+                    {activeClients.map(c => (
+                        <option key={c.id} value={c.id} style={{ background: '#111' }}>{c.name} ({c.email})</option>
+                    ))}
+                </select>
+            </div>
+
+            {/* Mode toggle */}
+            <div className="flex gap-2">
+                {[{ id: 'manual', label: 'Add Manually', icon: 'PenLine' }, { id: 'csv', label: 'Paste CSV', icon: 'FileText' }].map(m => (
+                    <button
+                        key={m.id}
+                        onClick={() => setMode(m.id)}
+                        className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all"
+                        style={{
+                            background: mode === m.id ? 'rgba(37,99,235,0.15)' : '#111',
+                            border: `1px solid ${mode === m.id ? '#2563EB' : '#1A1A1A'}`,
+                            color: mode === m.id ? '#60A5FA' : '#9CA3AF',
+                        }}
+                    >
+                        <Icon name={m.icon} size={15} color={mode === m.id ? '#60A5FA' : '#9CA3AF'} />
+                        {m.label}
+                    </button>
+                ))}
+            </div>
+
+            {/* CSV mode */}
+            {mode === 'csv' && (
+                <div className="rounded-xl p-5 space-y-4" style={{ background: '#111', border: '1px solid #1A1A1A' }}>
+                    <div>
+                        <label className="block text-xs text-gray-400 mb-1.5">Paste CSV data</label>
+                        <p className="text-xs text-gray-600 mb-3">
+                            Header row required: name, company, email, phone, score, specialty
+                        </p>
+                        <textarea
+                            rows={8}
+                            value={csvText} onChange={e => setCsvText(e.target.value)}
+                            placeholder={'name,company,email,phone,score,specialty\nJohn Doe,Acme Corp,john@acme.com,(555) 123-4567,8,Commercial'}
+                            className="w-full rounded-lg px-4 py-3 text-sm placeholder-gray-700 transition-colors resize-none font-mono"
+                            style={inputStyle}
+                            onFocus={focusBorder} onBlur={blurBorder}
+                        />
+                    </div>
+                    {csvText && (
+                        <p className="text-xs text-gray-500">
+                            {parseCSV(csvText).length} lead{parseCSV(csvText).length !== 1 ? 's' : ''} detected
+                        </p>
+                    )}
+                </div>
+            )}
+
+            {/* Manual mode */}
+            {mode === 'manual' && (
+                <div className="rounded-xl p-5 space-y-4" style={{ background: '#111', border: '1px solid #1A1A1A' }}>
+                    {rows.map((row, i) => (
+                        <div key={i} className="rounded-lg p-4 space-y-3" style={{ background: '#0D0D0D', border: '1px solid #1A1A1A' }}>
+                            <div className="flex items-center justify-between">
+                                <span className="text-xs text-gray-500 font-medium">Lead {i + 1}</span>
+                                {rows.length > 1 && (
+                                    <button onClick={() => removeRow(i)} className="text-xs text-red-400 hover:text-red-300 transition-colors">
+                                        Remove
+                                    </button>
+                                )}
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <input placeholder="Name *" value={row.name} onChange={e => updateRow(i, 'name', e.target.value)}
+                                    className="rounded-lg px-3 py-2.5 text-sm placeholder-gray-600" style={inputStyle} onFocus={focusBorder} onBlur={blurBorder} />
+                                <input placeholder="Company" value={row.company} onChange={e => updateRow(i, 'company', e.target.value)}
+                                    className="rounded-lg px-3 py-2.5 text-sm placeholder-gray-600" style={inputStyle} onFocus={focusBorder} onBlur={blurBorder} />
+                                <input placeholder="Email *" type="email" value={row.email} onChange={e => updateRow(i, 'email', e.target.value)}
+                                    className="rounded-lg px-3 py-2.5 text-sm placeholder-gray-600" style={inputStyle} onFocus={focusBorder} onBlur={blurBorder} />
+                                <input placeholder="Phone" value={row.phone} onChange={e => updateRow(i, 'phone', e.target.value)}
+                                    className="rounded-lg px-3 py-2.5 text-sm placeholder-gray-600" style={inputStyle} onFocus={focusBorder} onBlur={blurBorder} />
+                                <select value={row.specialty} onChange={e => updateRow(i, 'specialty', e.target.value)}
+                                    className="rounded-lg px-3 py-2.5 text-sm" style={inputStyle} onFocus={focusBorder} onBlur={blurBorder}>
+                                    {SPECIALTIES.map(s => <option key={s} value={s} style={{ background: '#111' }}>{s}</option>)}
+                                </select>
+                                <select value={row.score} onChange={e => updateRow(i, 'score', e.target.value)}
+                                    className="rounded-lg px-3 py-2.5 text-sm" style={inputStyle} onFocus={focusBorder} onBlur={blurBorder}>
+                                    {[1,2,3,4,5,6,7,8,9,10].map(s => <option key={s} value={s} style={{ background: '#111' }}>Score: {s}/10</option>)}
+                                </select>
+                            </div>
+                        </div>
+                    ))}
+                    <button
+                        onClick={addRow}
+                        className="flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300 transition-colors"
+                    >
+                        <Icon name="Plus" size={15} color="#60A5FA" /> Add another lead
+                    </button>
+                </div>
+            )}
+
+            {/* Result message */}
+            {result && (
+                <div
+                    className="rounded-xl px-4 py-3 text-sm"
+                    style={{
+                        background: result.success ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)',
+                        border: `1px solid ${result.success ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)'}`,
+                        color: result.success ? '#22C55E' : '#EF4444',
+                    }}
+                >
+                    {result.message}
+                </div>
+            )}
+
+            {/* Import button */}
+            <button
+                onClick={handleImport}
+                disabled={!selectedClient || importing}
+                className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-medium text-white transition-all"
+                style={{
+                    background: selectedClient && !importing ? '#2563EB' : '#1A1A1A',
+                    opacity: selectedClient && !importing ? 1 : 0.5,
+                    cursor: selectedClient && !importing ? 'pointer' : 'not-allowed',
+                }}
+            >
+                <Icon name="Upload" size={16} color="#fff" />
+                {importing ? 'Importing…' : 'Import Leads'}
+            </button>
+        </div>
+    );
+}
+
+// ── PAGE 3: Client Settings ──────────────────────────────────────────────────
+function ClientSettingsPage({ clients, setClients }) {
+    const [selectedId, setSelectedId] = useState('');
+    const [saved, setSaved] = useState(false);
+    const [form, setForm] = useState(null);
+
+    const client = clients.find(c => c.id === selectedId);
+
+    useEffect(() => {
+        if (client) {
+            setForm({
+                plan: client.plan,
+                status: client.status,
+                calendly_link: client.calendly_link || '',
+                insurance_types: client.insurance_types || [],
+                ideal_client_size: client.ideal_client_size || '',
+                target_industries: client.target_industries || [],
+                admin_notes: client.admin_notes || '',
+            });
+            setSaved(false);
+        } else {
+            setForm(null);
+        }
+    }, [selectedId]);
+
+    const updateForm = (key, val) => setForm(prev => ({ ...prev, [key]: val }));
+
+    const toggleArray = (key, val) => {
+        setForm(prev => ({
+            ...prev,
+            [key]: prev[key].includes(val) ? prev[key].filter(v => v !== val) : [...prev[key], val],
+        }));
+    };
+
+    const handleSave = async () => {
+        if (!form || !selectedId) return;
+
+        setClients(prev => prev.map(c =>
+            c.id === selectedId
+                ? { ...c, plan: form.plan, status: form.status, calendly_link: form.calendly_link, insurance_types: form.insurance_types, ideal_client_size: form.ideal_client_size, target_industries: form.target_industries, admin_notes: form.admin_notes, mrr: form.status === 'Active' ? ({ Starter: 1497, Growth: 3497, Scale: 6997 }[form.plan] || 0) : 0 }
+                : c
+        ));
+
+        if (sb) {
+            await sb.from('client_onboarding').update({
+                calendly_link: form.calendly_link,
+                insurance_types: form.insurance_types,
+                ideal_client_size: form.ideal_client_size,
+                target_industries: form.target_industries,
+            }).eq('user_id', selectedId);
+        }
+
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2000);
+    };
+
+    const inputStyle = { background: '#0A0A0A', border: '1px solid #1A1A1A', color: '#e5e7eb' };
+    const focusBorder = (e) => e.target.style.borderColor = '#2563EB';
+    const blurBorder  = (e) => e.target.style.borderColor = '#1A1A1A';
+
+    const INSURANCE_TYPES = ['Life','Health','Commercial','Auto','Home','Medicare'];
+    const INDUSTRIES = ['Healthcare','Real Estate','Construction','Retail','Tech','Other'];
+    const CLIENT_SIZES = ['Solo','2-10','10-50','50-200','200+'];
+
+    return (
+        <div className="space-y-6 max-w-2xl">
+            <div>
+                <h1 className="text-lg font-semibold">Client Settings</h1>
+                <p className="text-sm text-gray-500 mt-0.5">Edit client configuration and status</p>
+            </div>
+
+            {/* Client selector */}
+            <div className="rounded-xl p-5" style={{ background: '#111', border: '1px solid #1A1A1A' }}>
+                <label className="block text-xs text-gray-400 mb-1.5">Select Client</label>
+                <select
+                    value={selectedId} onChange={e => setSelectedId(e.target.value)}
+                    className="w-full rounded-lg px-4 py-3 text-sm transition-colors"
+                    style={{ ...inputStyle, color: selectedId ? '#e5e7eb' : '#6B7280' }}
+                    onFocus={focusBorder} onBlur={blurBorder}
+                >
+                    <option value="" style={{ background: '#111' }}>Choose a client…</option>
+                    {clients.map(c => (
+                        <option key={c.id} value={c.id} style={{ background: '#111' }}>
+                            {c.name} — {c.plan} ({c.status})
+                        </option>
+                    ))}
+                </select>
+            </div>
+
+            {form && client && (
+                <>
+                    {/* Plan & Status */}
+                    <div className="rounded-xl p-6 space-y-4" style={{ background: '#111', border: '1px solid #1A1A1A' }}>
+                        <h2 className="text-sm font-medium text-gray-300">Plan & Status</h2>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-xs text-gray-500 mb-1.5">Plan</label>
+                                <select value={form.plan} onChange={e => updateForm('plan', e.target.value)}
+                                    className="w-full rounded-lg px-4 py-3 text-sm" style={inputStyle} onFocus={focusBorder} onBlur={blurBorder}>
+                                    {['Starter','Growth','Scale'].map(p => <option key={p} value={p} style={{ background: '#111' }}>{p}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs text-gray-500 mb-1.5">Status</label>
+                                <div className="flex gap-2">
+                                    {['Active','Paused'].map(s => (
+                                        <button
+                                            key={s}
+                                            onClick={() => updateForm('status', s)}
+                                            className="flex-1 py-2.5 rounded-lg text-sm font-medium transition-all"
+                                            style={{
+                                                background: form.status === s ? (s === 'Active' ? 'rgba(34,197,94,0.15)' : 'rgba(234,179,8,0.15)') : '#0A0A0A',
+                                                border: `1px solid ${form.status === s ? (s === 'Active' ? 'rgba(34,197,94,0.4)' : 'rgba(234,179,8,0.4)') : '#1A1A1A'}`,
+                                                color: form.status === s ? (s === 'Active' ? '#22C55E' : '#EAB308') : '#9CA3AF',
+                                            }}
+                                        >
+                                            {s}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* ICP Settings */}
+                    <div className="rounded-xl p-6 space-y-4" style={{ background: '#111', border: '1px solid #1A1A1A' }}>
+                        <h2 className="text-sm font-medium text-gray-300">ICP Settings</h2>
+
+                        <div>
+                            <label className="block text-xs text-gray-400 mb-2">Insurance Types</label>
+                            <div className="flex flex-wrap gap-2">
+                                {INSURANCE_TYPES.map(t => {
+                                    const active = form.insurance_types.includes(t);
+                                    return (
+                                        <button key={t} onClick={() => toggleArray('insurance_types', t)}
+                                            className="px-3.5 py-2 rounded-lg text-sm font-medium transition-all"
+                                            style={{
+                                                background: active ? 'rgba(37,99,235,0.15)' : '#0A0A0A',
+                                                border: `1px solid ${active ? '#2563EB' : '#1A1A1A'}`,
+                                                color: active ? '#60A5FA' : '#9CA3AF',
+                                            }}>
+                                            {active && <span className="mr-1">✓</span>}{t}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-xs text-gray-400 mb-1.5">Client Size</label>
+                            <select value={form.ideal_client_size} onChange={e => updateForm('ideal_client_size', e.target.value)}
+                                className="w-full rounded-lg px-4 py-3 text-sm" style={inputStyle} onFocus={focusBorder} onBlur={blurBorder}>
+                                <option value="" style={{ background: '#111' }}>Select…</option>
+                                {CLIENT_SIZES.map(s => <option key={s} value={s} style={{ background: '#111' }}>{s}</option>)}
+                            </select>
+                        </div>
+
+                        <div>
+                            <label className="block text-xs text-gray-400 mb-2">Target Industries</label>
+                            <div className="flex flex-wrap gap-2">
+                                {INDUSTRIES.map(ind => {
+                                    const active = form.target_industries.includes(ind);
+                                    return (
+                                        <button key={ind} onClick={() => toggleArray('target_industries', ind)}
+                                            className="px-3 py-1.5 rounded-full text-xs font-medium transition-all"
+                                            style={{
+                                                background: active ? '#2563EB' : '#0A0A0A',
+                                                border: `1px solid ${active ? '#2563EB' : '#1A1A1A'}`,
+                                                color: active ? '#fff' : '#9CA3AF',
+                                            }}>
+                                            {ind}{active && <span className="ml-1.5 opacity-70">×</span>}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Calendly */}
+                    <div className="rounded-xl p-6 space-y-4" style={{ background: '#111', border: '1px solid #1A1A1A' }}>
+                        <h2 className="text-sm font-medium text-gray-300">Calendar</h2>
+                        <div>
+                            <label className="block text-xs text-gray-400 mb-1.5">Calendly / Cal.com Link</label>
+                            <input
+                                type="text" placeholder="https://calendly.com/…"
+                                value={form.calendly_link} onChange={e => updateForm('calendly_link', e.target.value)}
+                                className="w-full rounded-lg px-4 py-3 text-sm placeholder-gray-700" style={inputStyle}
+                                onFocus={focusBorder} onBlur={blurBorder}
+                            />
+                        </div>
+                    </div>
+
+                    {/* Admin Notes */}
+                    <div className="rounded-xl p-6 space-y-4" style={{ background: '#111', border: '1px solid #1A1A1A' }}>
+                        <h2 className="text-sm font-medium text-gray-300">Internal Notes</h2>
+                        <textarea
+                            rows={4}
+                            value={form.admin_notes} onChange={e => updateForm('admin_notes', e.target.value)}
+                            placeholder="Private notes about this client…"
+                            className="w-full rounded-lg px-4 py-3 text-sm placeholder-gray-700 resize-none" style={inputStyle}
+                            onFocus={focusBorder} onBlur={blurBorder}
+                        />
+                    </div>
+
+                    {/* Save */}
+                    <button
+                        onClick={handleSave}
+                        className="px-6 py-3 rounded-xl text-sm font-medium transition-colors"
+                        style={{
+                            background: saved ? 'rgba(34,197,94,0.15)' : '#2563EB',
+                            color: saved ? '#22C55E' : '#fff',
+                            border: saved ? '1px solid rgba(34,197,94,0.3)' : '1px solid transparent',
+                        }}
+                    >
+                        {saved ? '✓ Saved' : 'Save Changes'}
+                    </button>
+                </>
+            )}
+        </div>
+    );
+}
+
+// ── Root App ─────────────────────────────────────────────────────────────────
+function App() {
+    const [page, setPage]       = useState('clients');
+    const [sbOpen, setSbOpen]   = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [user, setUser]       = useState(null);
+    const [clients, setClients] = useState([]);
+
+    useEffect(() => {
+        (async () => {
+            try {
+                if (sb) {
+                    const { data: { session }, error } = await sb.auth.getSession();
+                    if (error || !session || session.user.email !== ADMIN_EMAIL) {
+                        // No admin session — use demo mode
+                        setUser({ email: ADMIN_EMAIL });
+                        setClients(MOCK_CLIENTS);
+                        setLoading(false);
+                        return;
+                    }
+                    setUser(session.user);
+
+                    // Fetch all clients from client_onboarding + aggregate lead/appointment data
+                    const { data: onboarding } = await sb.from('client_onboarding').select('*');
+                    if (onboarding?.length) {
+                        const enriched = await Promise.all(onboarding.map(async (ob) => {
+                            const [leadsRes, apptsRes] = await Promise.all([
+                                sb.from('leads').select('id', { count: 'exact', head: true }).eq('user_id', ob.user_id),
+                                sb.from('appointments').select('id', { count: 'exact', head: true }).eq('user_id', ob.user_id),
+                            ]);
+                            return {
+                                id: ob.user_id,
+                                name: ob.full_name || 'Unknown',
+                                email: ob.email || '',
+                                plan: ob.plan || 'Starter',
+                                start_date: ob.created_at?.split('T')[0] || '2026-01-01',
+                                status: ob.status || 'Active',
+                                leads_sent: leadsRes.count || 0,
+                                appointments: apptsRes.count || 0,
+                                mrr: ob.status === 'Active' ? ({ Starter: 1497, Growth: 3497, Scale: 6997 }[ob.plan] || 0) : 0,
+                                calendly_link: ob.calendly_link || '',
+                                insurance_types: ob.insurance_types || [],
+                                ideal_client_size: ob.ideal_client_size || '',
+                                target_industries: ob.target_industries || [],
+                                admin_notes: ob.admin_notes || '',
+                            };
+                        }));
+                        setClients(enriched);
+                    } else {
+                        setClients(MOCK_CLIENTS);
+                    }
+                } else {
+                    setUser({ email: ADMIN_EMAIL });
+                    setClients(MOCK_CLIENTS);
+                }
+            } catch (err) {
+                console.warn('Init failed, using demo data:', err);
+                setUser({ email: ADMIN_EMAIL });
+                setClients(MOCK_CLIENTS);
+            }
+            setLoading(false);
+        })();
+    }, []);
+
+    if (loading) {
+        return (
+            <div className="h-screen flex items-center justify-center" style={{ background: '#0A0A0A' }}>
+                <div className="flex items-center gap-3 text-gray-400 text-sm">
+                    <div className="w-4 h-4 rounded-full border-2 border-t-transparent animate-spin"
+                         style={{ borderColor: '#2563EB', borderTopColor: 'transparent' }} />
+                    Loading…
+                </div>
+            </div>
+        );
+    }
+
+    const PAGES = {
+        clients:  <ClientsPage clients={clients} />,
+        addleads: <AddLeadsPage clients={clients} />,
+        settings: <ClientSettingsPage clients={clients} setClients={setClients} />,
+    };
+
+    return (
+        <div className="h-screen flex overflow-hidden" style={{ background: '#0A0A0A' }}>
+            <Sidebar page={page} setPage={setPage} open={sbOpen} setOpen={setSbOpen} />
+            <div className="flex-1 flex flex-col md:ml-60 overflow-hidden">
+                <TopBar open={sbOpen} setOpen={setSbOpen} />
+                <main className="flex-1 overflow-y-auto p-5 md:p-6">
+                    {PAGES[page]}
+                </main>
+            </div>
+        </div>
+    );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

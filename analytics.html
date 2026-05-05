@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analytics — BrokerPipeline.ai</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://unpkg.com/prop-types@15/prop-types.min.js"></script>
+    <script src="https://unpkg.com/recharts@2/umd/Recharts.js"></script>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        html,body,#root{height:100%}
+        body{background:#0A0A0A;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
+        ::-webkit-scrollbar{width:5px;height:5px}
+        ::-webkit-scrollbar-track{background:transparent}
+        ::-webkit-scrollbar-thumb{background:#2A2A2A;border-radius:99px}
+        .sidebar{transition:transform .25s cubic-bezier(.4,0,.2,1)}
+        input:focus,textarea:focus,select:focus{outline:none}
+        .tbl-row:hover{background:rgba(255,255,255,0.025)}
+    </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useMemo } = React;
+
+// ── Supabase ─────────────────────────────────────────────────────────────────
+const SUPABASE_URL      = 'https://glokxezbcrelrndcbhhs.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdsb2t4ZXpiY3JlbHJuZGNiaGhzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5NzMxNzEsImV4cCI6MjA5MzU0OTE3MX0.imnH5pmrXpiKz18fzxyF78b23luNNmu9izM3yBSlbQ4';
+const ADMIN_EMAIL = 'admin@brokerpipeline.ai';
+
+let sb = null;
+try {
+    if (typeof supabase !== 'undefined' && supabase.createClient) {
+        sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    }
+} catch(e) {}
+
+// ── Recharts ─────────────────────────────────────────────────────────────────
+const _R = (typeof Recharts !== 'undefined') ? Recharts : {};
+const {
+    LineChart = () => null, Line = () => null,
+    BarChart = () => null, Bar = () => null,
+    XAxis = () => null, YAxis = () => null,
+    CartesianGrid = () => null, Tooltip = () => null,
+    PieChart = () => null, Pie = () => null, Cell = () => null,
+    Legend = () => null,
+} = _R;
+
+function useContainerSize() {
+    const ref = useRef(null);
+    const [size, setSize] = useState({ width: 0, height: 0 });
+    useEffect(() => {
+        if (!ref.current) return;
+        const update = () => {
+            const { width, height } = ref.current.getBoundingClientRect();
+            setSize({ width: Math.round(width), height: Math.round(height) });
+        };
+        update();
+        const ro = new ResizeObserver(update);
+        ro.observe(ref.current);
+        return () => ro.disconnect();
+    }, []);
+    return [ref, size];
+}
+
+// ── Icon ─────────────────────────────────────────────────────────────────────
+function Icon({ name, size = 18, color = 'currentColor', className = '' }) {
+    const ref = useRef(null);
+    useEffect(() => {
+        if (!ref.current || !lucide?.icons?.[name]) return;
+        ref.current.innerHTML = '';
+        const svg = lucide.createElement(lucide.icons[name]);
+        svg.setAttribute('width', size);
+        svg.setAttribute('height', size);
+        svg.setAttribute('stroke', color);
+        svg.style.display = 'block';
+        svg.style.flexShrink = '0';
+        ref.current.appendChild(svg);
+    }, [name, size, color]);
+    return <span ref={ref} className={`inline-flex items-center ${className}`} />;
+}
+
+// ── Shared ───────────────────────────────────────────────────────────────────
+const IS = { background: '#0A0A0A', border: '1px solid #1A1A1A', color: '#e5e7eb' };
+const fb = e => e.target.style.borderColor = '#2563EB';
+const bb = e => e.target.style.borderColor = '#1A1A1A';
+
+const BADGE_MAP = {
+    Active:  'bg-green-500/15 text-green-400 border-green-500/25',
+    Paused:  'bg-yellow-500/15 text-yellow-400 border-yellow-500/25',
+    Churned: 'bg-red-500/15 text-red-400 border-red-500/25',
+    Starter: 'bg-gray-500/15 text-gray-400 border-gray-500/25',
+    Growth:  'bg-blue-500/15 text-blue-400 border-blue-500/25',
+    Scale:   'bg-purple-500/15 text-purple-400 border-purple-500/25',
+};
+function Badge({ status }) {
+    return <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium border ${BADGE_MAP[status] || 'bg-gray-500/15 text-gray-400 border-gray-500/25'}`}>{status}</span>;
+}
+
+// ── Mock Data ────────────────────────────────────────────────────────────────
+const PLANS = { Starter: 1497, Growth: 3497, Scale: 6997 };
+const MOCK_CLIENTS = [
+    { name: 'John Smith', plan: 'Growth', status: 'Active', leads: 58, appts: 7, calls: 42, replyRate: 12.1, conversion: 12.1 },
+    { name: 'Sarah Johnson', plan: 'Scale', status: 'Active', leads: 142, appts: 18, calls: 89, replyRate: 14.8, conversion: 12.7 },
+    { name: 'Mike Davis', plan: 'Starter', status: 'Active', leads: 19, appts: 2, calls: 15, replyRate: 8.2, conversion: 10.5 },
+    { name: 'Lisa Chen', plan: 'Growth', status: 'Paused', leads: 0, appts: 0, calls: 0, replyRate: 0, conversion: 0 },
+    { name: 'Robert Williams', plan: 'Growth', status: 'Active', leads: 45, appts: 5, calls: 31, replyRate: 11.4, conversion: 11.1 },
+    { name: 'Emma Taylor', plan: 'Scale', status: 'Churned', leads: 0, appts: 0, calls: 0, replyRate: 0, conversion: 0 },
+    { name: 'David Brown', plan: 'Starter', status: 'Active', leads: 12, appts: 1, calls: 8, replyRate: 15.2, conversion: 8.3 },
+    { name: 'Jennifer Martinez', plan: 'Growth', status: 'Active', leads: 61, appts: 8, calls: 47, replyRate: 13.5, conversion: 13.1 },
+];
+
+function genMRRData() {
+    const months = ['Jun','Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr','May'];
+    const base = 8000;
+    return months.map((m, i) => ({
+        month: m,
+        mrr: Math.round(base + (i * 1600) + (Math.random() * 2000 - 500)),
+    }));
+}
+
+function genWeeklyData() {
+    const weeks = [];
+    for (let i = 7; i >= 0; i--) {
+        const d = new Date(); d.setDate(d.getDate() - i * 7);
+        const label = `W${d.getMonth()*4 + Math.ceil(d.getDate()/7)}`;
+        const leads = Math.floor(40 + Math.random() * 60);
+        const appts = Math.floor(leads * (0.08 + Math.random() * 0.1));
+        weeks.push({ week: label, leads, appointments: appts, conversion: parseFloat(((appts/leads)*100).toFixed(1)) });
+    }
+    return weeks;
+}
+
+function genActivityFeed() {
+    const templates = [
+        { tpl: 'New lead added for {{client}}', icon: 'UserPlus', color: '#2563EB' },
+        { tpl: 'Voice agent booked meeting with {{lead}}', icon: 'PhoneCall', color: '#22C55E' },
+        { tpl: 'Email opened by {{lead}}', icon: 'MailOpen', color: '#EAB308' },
+        { tpl: 'New client onboarded: {{client}}', icon: 'UserCheck', color: '#8B5CF6' },
+        { tpl: 'Email replied by {{lead}}', icon: 'MessageSquare', color: '#06B6D4' },
+        { tpl: 'Call completed — {{lead}} not interested', icon: 'PhoneOff', color: '#EF4444' },
+        { tpl: 'Appointment confirmed: {{lead}} with {{client}}', icon: 'CalendarCheck', color: '#22C55E' },
+        { tpl: 'Lead score updated for {{lead}} → 9/10', icon: 'TrendingUp', color: '#F97316' },
+        { tpl: 'Voicemail left for {{lead}}', icon: 'Voicemail', color: '#3B82F6' },
+        { tpl: 'CSV imported: 25 leads for {{client}}', icon: 'Upload', color: '#2563EB' },
+    ];
+    const clients = ['John Smith','Sarah Johnson','Mike Davis','Robert Williams','David Brown','Jennifer Martinez'];
+    const leads = ['James Carter','Lisa Monroe','David Park','Emma Chen','Ryan Torres','Olivia Grant','Noah Kim','Sophia Reyes','Ethan Brooks','Mia Patel'];
+    const events = [];
+    for (let i = 0; i < 50; i++) {
+        const t = templates[Math.floor(Math.random() * templates.length)];
+        const mins = Math.floor(Math.random() * 1440 * 3);
+        let text = t.tpl.replace('{{client}}', clients[Math.floor(Math.random()*clients.length)])
+                        .replace('{{lead}}', leads[Math.floor(Math.random()*leads.length)]);
+        events.push({ id: i, text, icon: t.icon, color: t.color, minutesAgo: mins });
+    }
+    return events.sort((a,b) => a.minutesAgo - b.minutesAgo);
+}
+
+const MRR_DATA = genMRRData();
+const WEEKLY_DATA = genWeeklyData();
+const ACTIVITY_FEED = genActivityFeed();
+const CHANNEL_DATA = [
+    { name: 'Email Outreach', value: 487, color: '#2563EB' },
+    { name: 'Voice Calls', value: 312, color: '#8B5CF6' },
+    { name: 'Inbound', value: 89, color: '#22C55E' },
+];
+
+function fmtTime(mins) {
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    if (mins < 1440) return `${Math.floor(mins/60)}h ago`;
+    return `${Math.floor(mins/1440)}d ago`;
+}
+
+// ── Sidebar ──────────────────────────────────────────────────────────────────
+function Sidebar({ open, setOpen }) {
+    return (
+        <>
+            {open && <div className="fixed inset-0 bg-black/60 z-20 md:hidden" onClick={() => setOpen(false)} />}
+            <aside className={`sidebar fixed inset-y-0 left-0 z-30 w-60 flex flex-col ${open ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}
+                style={{ background: '#0D0D0D', borderRight: '1px solid #1A1A1A' }}>
+                <div className="h-14 flex items-center px-5" style={{ borderBottom: '1px solid #1A1A1A' }}>
+                    <a href="index.html" className="text-base font-bold">
+                        BrokerPipeline<span style={{ color: '#2563EB' }}>.ai</span>
+                    </a>
+                    <span className="ml-2 px-2 py-0.5 rounded text-[10px] font-bold" style={{ background: 'rgba(34,197,94,0.15)', color: '#22C55E', border: '1px solid rgba(34,197,94,0.25)' }}>
+                        ANALYTICS
+                    </span>
+                </div>
+                <nav className="flex-1 py-3 px-2 overflow-y-auto">
+                    <div className="px-3 py-2 text-[10px] text-gray-600 uppercase tracking-wider">Overview</div>
+                    <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm"
+                        style={{ background: 'rgba(37,99,235,0.1)', color: '#2563EB' }}>
+                        <Icon name="BarChart3" size={16} color="#2563EB" /> Full Analytics
+                    </button>
+                </nav>
+                <div className="px-4 py-3" style={{ borderTop: '1px solid #1A1A1A' }}>
+                    <button onClick={() => { window.location.href = 'admin.html'; }}
+                        className="flex items-center gap-2 text-xs text-gray-500 hover:text-white transition-colors">
+                        <Icon name="ArrowLeft" size={14} /> Back to Admin
+                    </button>
+                </div>
+            </aside>
+        </>
+    );
+}
+
+// ── Stat Card ────────────────────────────────────────────────────────────────
+function StatCard({ label, value, icon, trend, trendUp }) {
+    return (
+        <div className="rounded-xl p-4" style={{ background: '#111', border: '1px solid #1F1F1F' }}>
+            <div className="flex items-center justify-between mb-3">
+                <span className="text-xs text-gray-500">{label}</span>
+                <Icon name={icon} size={16} color="#333" />
+            </div>
+            <div className="text-2xl font-bold">{value}</div>
+            {trend && (
+                <div className={`text-xs mt-1 flex items-center gap-1 ${trendUp ? 'text-green-400' : 'text-red-400'}`}>
+                    <Icon name={trendUp ? 'TrendingUp' : 'TrendingDown'} size={12} />
+                    {trend}
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ── MRR Chart ────────────────────────────────────────────────────────────────
+function MRRChart() {
+    const [ref, { width }] = useContainerSize();
+    const lastTwo = MRR_DATA.slice(-2);
+    const growth = lastTwo.length === 2
+        ? (((lastTwo[1].mrr - lastTwo[0].mrr) / lastTwo[0].mrr) * 100).toFixed(1)
+        : 0;
+
+    return (
+        <div className="rounded-xl p-5" style={{ background: '#111', border: '1px solid #1F1F1F' }}>
+            <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-semibold">MRR Growth</h3>
+                <span className={`text-xs px-2 py-0.5 rounded-full ${parseFloat(growth) >= 0 ? 'bg-green-500/15 text-green-400' : 'bg-red-500/15 text-red-400'}`}>
+                    {parseFloat(growth) >= 0 ? '+' : ''}{growth}% MoM
+                </span>
+            </div>
+            <div ref={ref} style={{ height: 220 }}>
+                {width > 0 && (
+                    <LineChart width={width} height={220} data={MRR_DATA} margin={{ top: 4, right: 8, left: -10, bottom: 0 }}>
+                        <defs>
+                            <linearGradient id="mrrGrad" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#2563EB" stopOpacity={0.2} />
+                                <stop offset="95%" stopColor="#2563EB" stopOpacity={0} />
+                            </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#1A1A1A" vertical={false} />
+                        <XAxis dataKey="month" tick={{ fill: '#555', fontSize: 11 }} tickLine={false} axisLine={false} />
+                        <YAxis tick={{ fill: '#555', fontSize: 11 }} tickLine={false} axisLine={false}
+                            tickFormatter={v => `$${(v/1000).toFixed(0)}k`} />
+                        <Tooltip contentStyle={{ background: '#111', border: '1px solid #1F1F1F', borderRadius: 10, color: '#fff', fontSize: 12 }}
+                            formatter={v => [`$${v.toLocaleString()}`, 'MRR']}
+                            cursor={{ stroke: '#2563EB', strokeWidth: 1, strokeDasharray: '4 4' }} />
+                        <Line type="monotone" dataKey="mrr" stroke="#2563EB" strokeWidth={2.5} dot={false}
+                            isAnimationActive={false} activeDot={{ r: 4, fill: '#2563EB', stroke: '#0A0A0A', strokeWidth: 2 }} />
+                    </LineChart>
+                )}
+            </div>
+        </div>
+    );
+}
+
+// ── Leads vs Appointments Chart ──────────────────────────────────────────────
+function LeadsVsApptsChart() {
+    const [ref, { width }] = useContainerSize();
+
+    return (
+        <div className="rounded-xl p-5" style={{ background: '#111', border: '1px solid #1F1F1F' }}>
+            <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-semibold">Leads vs Appointments</h3>
+                <div className="flex items-center gap-3 text-[10px] text-gray-500">
+                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ background: '#2563EB' }} /> Leads</span>
+                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ background: '#22C55E' }} /> Appointments</span>
+                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ background: '#EAB308' }} /> Conv %</span>
+                </div>
+            </div>
+            <div ref={ref} style={{ height: 220 }}>
+                {width > 0 && (
+                    <BarChart width={width} height={220} data={WEEKLY_DATA} margin={{ top: 4, right: 8, left: -10, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#1A1A1A" vertical={false} />
+                        <XAxis dataKey="week" tick={{ fill: '#555', fontSize: 11 }} tickLine={false} axisLine={false} />
+                        <YAxis yAxisId="left" tick={{ fill: '#555', fontSize: 11 }} tickLine={false} axisLine={false} />
+                        <YAxis yAxisId="right" orientation="right" tick={{ fill: '#555', fontSize: 11 }} tickLine={false} axisLine={false}
+                            tickFormatter={v => `${v}%`} />
+                        <Tooltip contentStyle={{ background: '#111', border: '1px solid #1F1F1F', borderRadius: 10, color: '#fff', fontSize: 12 }}
+                            cursor={{ fill: 'rgba(255,255,255,0.02)' }} />
+                        <Bar yAxisId="left" dataKey="leads" fill="#2563EB" radius={[4,4,0,0]} isAnimationActive={false} />
+                        <Bar yAxisId="left" dataKey="appointments" fill="#22C55E" radius={[4,4,0,0]} isAnimationActive={false} />
+                        <Line yAxisId="right" type="monotone" dataKey="conversion" stroke="#EAB308" strokeWidth={2}
+                            dot={false} isAnimationActive={false} />
+                    </BarChart>
+                )}
+            </div>
+        </div>
+    );
+}
+
+// ── Client Performance Table ─────────────────────────────────────────────────
+function ClientPerformanceTable() {
+    const rowColor = (appts) => {
+        if (appts >= 15) return 'rgba(34,197,94,0.04)';
+        if (appts >= 8) return 'rgba(234,179,8,0.04)';
+        if (appts > 0) return 'rgba(239,68,68,0.04)';
+        return 'transparent';
+    };
+
+    return (
+        <div className="rounded-xl overflow-hidden" style={{ background: '#111', border: '1px solid #1F1F1F' }}>
+            <div className="px-5 py-4" style={{ borderBottom: '1px solid #1F1F1F' }}>
+                <h3 className="text-sm font-semibold">Client Performance</h3>
+            </div>
+            <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                    <thead>
+                        <tr style={{ borderBottom: '1px solid #1F1F1F' }}>
+                            {['Client','Plan','Leads/Mo','Appts/Mo','Conv %','Calls','Reply Rate','Status'].map(h => (
+                                <th key={h} className="px-4 py-3 text-left text-xs text-gray-500 font-medium">{h}</th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {MOCK_CLIENTS.map((c, i) => (
+                            <tr key={i} className="tbl-row" style={{ borderBottom: '1px solid #1A1A1A', background: rowColor(c.appts) }}>
+                                <td className="px-4 py-3 font-medium whitespace-nowrap">{c.name}</td>
+                                <td className="px-4 py-3"><Badge status={c.plan} /></td>
+                                <td className="px-4 py-3 text-gray-400">{c.leads}</td>
+                                <td className="px-4 py-3 text-gray-400">{c.appts}</td>
+                                <td className="px-4 py-3">
+                                    <span style={{ color: c.conversion > 12 ? '#22C55E' : c.conversion > 8 ? '#EAB308' : '#EF4444' }}>
+                                        {c.conversion}%
+                                    </span>
+                                </td>
+                                <td className="px-4 py-3 text-gray-400">{c.calls}</td>
+                                <td className="px-4 py-3 text-gray-400">{c.replyRate}%</td>
+                                <td className="px-4 py-3"><Badge status={c.status} /></td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+}
+
+// ── Channel Breakdown Donut ──────────────────────────────────────────────────
+function ChannelDonut() {
+    const [ref, { width }] = useContainerSize();
+    const total = CHANNEL_DATA.reduce((s, d) => s + d.value, 0);
+
+    return (
+        <div className="rounded-xl p-5" style={{ background: '#111', border: '1px solid #1F1F1F' }}>
+            <div className="mb-4">
+                <h3 className="text-sm font-semibold">Channel Breakdown</h3>
+            </div>
+            <div ref={ref} style={{ height: 220 }} className="flex items-center justify-center">
+                {width > 0 && (
+                    <PieChart width={Math.min(width, 400)} height={220}>
+                        <Pie data={CHANNEL_DATA} cx="50%" cy="50%" innerRadius={55} outerRadius={85}
+                            dataKey="value" isAnimationActive={false} stroke="none">
+                            {CHANNEL_DATA.map((d, i) => <Cell key={i} fill={d.color} />)}
+                        </Pie>
+                        <Tooltip contentStyle={{ background: '#111', border: '1px solid #1F1F1F', borderRadius: 10, color: '#fff', fontSize: 12 }}
+                            formatter={(v, n) => [`${v} (${((v/total)*100).toFixed(1)}%)`, n]} />
+                    </PieChart>
+                )}
+            </div>
+            <div className="flex justify-center gap-6 mt-2">
+                {CHANNEL_DATA.map(d => (
+                    <div key={d.name} className="text-center">
+                        <div className="flex items-center gap-1.5 text-xs text-gray-400 mb-0.5">
+                            <span className="w-2 h-2 rounded-full" style={{ background: d.color }} />
+                            {d.name}
+                        </div>
+                        <div className="text-sm font-semibold">{d.value} <span className="text-gray-500 font-normal">({((d.value/total)*100).toFixed(0)}%)</span></div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+// ── Activity Feed ────────────────────────────────────────────────────────────
+function ActivityFeed() {
+    const [limit, setLimit] = useState(15);
+
+    return (
+        <div className="rounded-xl" style={{ background: '#111', border: '1px solid #1F1F1F' }}>
+            <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: '1px solid #1F1F1F' }}>
+                <h3 className="text-sm font-semibold">Activity Feed</h3>
+                <span className="text-[10px] text-gray-500">Last 50 events</span>
+            </div>
+            <div className="divide-y divide-[#1A1A1A] max-h-[400px] overflow-y-auto">
+                {ACTIVITY_FEED.slice(0, limit).map(ev => (
+                    <div key={ev.id} className="flex items-start gap-3 px-5 py-3 hover:bg-white/[0.02] transition-colors">
+                        <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
+                            style={{ background: `${ev.color}15` }}>
+                            <Icon name={ev.icon} size={13} color={ev.color} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <p className="text-xs text-gray-300 leading-relaxed">{ev.text}</p>
+                        </div>
+                        <span className="text-[10px] text-gray-600 whitespace-nowrap flex-shrink-0">{fmtTime(ev.minutesAgo)}</span>
+                    </div>
+                ))}
+            </div>
+            {limit < ACTIVITY_FEED.length && (
+                <div className="px-5 py-3" style={{ borderTop: '1px solid #1F1F1F' }}>
+                    <button onClick={() => setLimit(l => Math.min(l + 15, 50))}
+                        className="text-xs text-blue-400 hover:text-blue-300">Show more</button>
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ── App ──────────────────────────────────────────────────────────────────────
+function App() {
+    const [sbOpen, setSbOpen] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [demoMode, setDemoMode] = useState(false);
+
+    useEffect(() => {
+        (async () => {
+            if (!sb) { setDemoMode(true); setLoading(false); return; }
+            try {
+                const { data: { session }, error } = await sb.auth.getSession();
+                if (error || !session || session.user.email !== ADMIN_EMAIL) setDemoMode(true);
+            } catch(e) { setDemoMode(true); }
+            setLoading(false);
+        })();
+    }, []);
+
+    if (loading) return (
+        <div className="h-full flex items-center justify-center">
+            <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        </div>
+    );
+
+    const activeClients = MOCK_CLIENTS.filter(c => c.status === 'Active');
+    const totalMRR = activeClients.reduce((s, c) => s + (PLANS[c.plan] || 0), 0);
+    const totalLeads = activeClients.reduce((s, c) => s + c.leads, 0);
+    const totalAppts = activeClients.reduce((s, c) => s + c.appts, 0);
+    const totalCalls = activeClients.reduce((s, c) => s + c.calls, 0);
+    const avgROI = activeClients.length > 0
+        ? ((activeClients.reduce((s, c) => s + (c.appts * 8000 * 0.25), 0) / activeClients.reduce((s, c) => s + (PLANS[c.plan] || 0), 0)) * 100).toFixed(0)
+        : 0;
+
+    return (
+        <div className="h-full flex">
+            <Sidebar open={sbOpen} setOpen={setSbOpen} />
+            <main className="flex-1 md:ml-60 min-h-full">
+                <header className="h-14 flex items-center justify-between px-5 sticky top-0 z-10"
+                    style={{ background: '#0A0A0A', borderBottom: '1px solid #1A1A1A' }}>
+                    <div className="flex items-center gap-3">
+                        <button className="md:hidden text-gray-400" onClick={() => setSbOpen(true)}>
+                            <Icon name="Menu" size={20} />
+                        </button>
+                        <span className="text-sm text-gray-500">Admin Analytics</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        {demoMode && (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">Demo Mode</span>
+                        )}
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
+                            style={{ background: 'rgba(34,197,94,0.15)', color: '#22C55E', border: '1px solid rgba(34,197,94,0.25)' }}>A</div>
+                    </div>
+                </header>
+
+                <div className="p-6 max-w-7xl space-y-6">
+                    {/* Top row stat cards */}
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                        <StatCard label="Total MRR" value={`$${totalMRR.toLocaleString()}`} icon="DollarSign" trend="+12.4% MoM" trendUp />
+                        <StatCard label="Active Clients" value={activeClients.length} icon="Users" trend="+2 this month" trendUp />
+                        <StatCard label="Leads This Month" value={totalLeads} icon="UserPlus" trend="+18% vs last" trendUp />
+                        <StatCard label="Appointments" value={totalAppts} icon="CalendarCheck" trend="+23% vs last" trendUp />
+                        <StatCard label="Calls Made" value={totalCalls} icon="Phone" trend="232 total" />
+                        <StatCard label="Avg Client ROI" value={`${avgROI}%`} icon="TrendingUp" trend="Healthy" trendUp />
+                    </div>
+
+                    {/* Charts row 1 */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <MRRChart />
+                        <LeadsVsApptsChart />
+                    </div>
+
+                    {/* Charts row 2 */}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <div className="lg:col-span-2">
+                            <ClientPerformanceTable />
+                        </div>
+                        <ChannelDonut />
+                    </div>
+
+                    {/* Activity Feed */}
+                    <ActivityFeed />
+                </div>
+            </main>
+        </div>
+    );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

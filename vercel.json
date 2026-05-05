@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    { "source": "/dashboard", "destination": "/dashboard.html" },
+    { "source": "/login", "destination": "/login.html" },
+    { "source": "/onboarding", "destination": "/onboarding.html" },
+    { "source": "/admin", "destination": "/admin.html" },
+    { "source": "/lead-machine", "destination": "/lead-machine.html" },
+    { "source": "/voice-agent", "destination": "/voice-agent.html" },
+    { "source": "/analytics", "destination": "/analytics.html" },
+    { "source": "/integrations", "destination": "/integrations.html" }
+  ]
+}

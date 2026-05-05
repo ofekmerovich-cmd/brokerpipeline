@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign In — BrokerPipeline.ai</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #0A0A0A; color: #fff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        .gradient-blur {
+            position: absolute;
+            width: 500px;
+            height: 500px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(37,99,235,0.12) 0%, transparent 70%);
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+        const { useState } = React;
+
+        const SUPABASE_URL      = 'https://glokxezbcrelrndcbhhs.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdsb2t4ZXpiY3JlbHJuZGNiaGhzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5NzMxNzEsImV4cCI6MjA5MzU0OTE3MX0.imnH5pmrXpiKz18fzxyF78b23luNNmu9izM3yBSlbQ4';
+
+        const sb = (SUPABASE_URL !== 'YOUR_SUPABASE_URL')
+            ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+            : null;
+
+        function LoginPage() {
+            const [mode, setMode]       = useState('signin');
+            const [email, setEmail]     = useState('');
+            const [password, setPassword] = useState('');
+            const [loading, setLoading] = useState(false);
+            const [error, setError]     = useState('');
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setError('');
+                setLoading(true);
+
+                if (!sb) {
+                    // Demo mode — skip auth
+                    setTimeout(() => { window.location.href = 'dashboard.html'; }, 400);
+                    return;
+                }
+
+                try {
+                    const { data: authData, error: authErr } = mode === 'signin'
+                        ? await sb.auth.signInWithPassword({ email, password })
+                        : await sb.auth.signUp({ email, password });
+
+                    if (authErr) throw authErr;
+
+                    if (mode === 'signup') {
+                        window.location.href = 'onboarding.html';
+                    } else {
+                        const { data: ob } = await sb.from('client_onboarding')
+                            .select('completed').eq('user_id', authData.user.id).single();
+                        window.location.href = (ob && ob.completed) ? 'dashboard.html' : 'onboarding.html';
+                    }
+                } catch (err) {
+                    setError(err.message);
+                    setLoading(false);
+                }
+            };
+
+            return (
+                <div className="min-h-screen flex items-center justify-center px-6 relative overflow-hidden">
+                    <div className="gradient-blur" style={{ top: '-150px', left: '50%', transform: 'translateX(-50%)' }} />
+
+                    <div className="w-full max-w-sm relative z-10">
+                        {/* Logo */}
+                        <div className="text-center mb-10">
+                            <a href="index.html" className="text-2xl font-bold">
+                                BrokerPipeline<span style={{ color: '#2563EB' }}>.ai</span>
+                            </a>
+                            <p className="text-sm text-gray-500 mt-2">
+                                {mode === 'signin' ? 'Sign in to your dashboard' : 'Create your account'}
+                            </p>
+                        </div>
+
+                        <div style={{ background: '#111111', border: '1px solid #1F1F1F' }} className="rounded-2xl p-8">
+                            {/* Demo banner */}
+                            {!sb && (
+                                <div className="mb-6 px-4 py-3 rounded-xl text-xs text-yellow-400"
+                                     style={{ background: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.2)' }}>
+                                    <strong>Demo mode</strong> — Supabase not configured. Click Sign In to preview the dashboard.
+                                </div>
+                            )}
+
+                            {/* Error */}
+                            {error && (
+                                <div className="mb-5 px-4 py-3 rounded-xl text-sm text-red-400"
+                                     style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)' }}>
+                                    {error}
+                                </div>
+                            )}
+
+                            <form onSubmit={handleSubmit} className="space-y-4">
+                                <div>
+                                    <label className="block text-xs text-gray-400 mb-1.5">Email</label>
+                                    <input
+                                        type="email"
+                                        value={email}
+                                        onChange={e => setEmail(e.target.value)}
+                                        placeholder="you@example.com"
+                                        className="w-full rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none transition-colors"
+                                        style={{ background: '#0A0A0A', border: '1px solid #1F1F1F' }}
+                                        onFocus={e => e.target.style.borderColor = '#2563EB'}
+                                        onBlur={e => e.target.style.borderColor = '#1F1F1F'}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs text-gray-400 mb-1.5">Password</label>
+                                    <input
+                                        type="password"
+                                        value={password}
+                                        onChange={e => setPassword(e.target.value)}
+                                        placeholder="••••••••"
+                                        className="w-full rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none transition-colors"
+                                        style={{ background: '#0A0A0A', border: '1px solid #1F1F1F' }}
+                                        onFocus={e => e.target.style.borderColor = '#2563EB'}
+                                        onBlur={e => e.target.style.borderColor = '#1F1F1F'}
+                                    />
+                                </div>
+                                <button
+                                    type="submit"
+                                    disabled={loading}
+                                    className="w-full py-3 rounded-xl text-sm font-medium text-white transition-colors"
+                                    style={{ background: loading ? '#1D4ED8' : '#2563EB', opacity: loading ? 0.7 : 1 }}
+                                >
+                                    {loading ? 'Loading…' : mode === 'signin' ? 'Sign In' : 'Create Account'}
+                                </button>
+                            </form>
+
+                            <div className="mt-6 text-center">
+                                <button
+                                    onClick={() => { setMode(m => m === 'signin' ? 'signup' : 'signin'); setError(''); }}
+                                    className="text-sm text-gray-500 hover:text-white transition-colors"
+                                >
+                                    {mode === 'signin'
+                                        ? "Don't have an account? Sign up"
+                                        : 'Already have an account? Sign in'}
+                                </button>
+                            </div>
+                        </div>
+
+                        <p className="text-center text-xs text-gray-600 mt-6">
+                            <a href="index.html" className="hover:text-gray-400 transition-colors">← Back to home</a>
+                        </p>
+                    </div>
+                </div>
+            );
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<LoginPage />);
+    </script>
+</body>
+</html>
