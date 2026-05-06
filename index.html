@@ -116,6 +116,7 @@
                         </a>
                         <div className="hidden md:flex items-center gap-8">
                             <a href="#how-it-works" className="text-sm text-gray-400 hover:text-white transition-colors">How It Works</a>
+                            <a href="#demo" className="text-sm text-gray-400 hover:text-white transition-colors">Watch Demo</a>
                             <a href="pricing.html" className="text-sm text-gray-400 hover:text-white transition-colors">Pricing</a>
                             <a href={CALENDLY_URL} target="_blank" className="text-sm text-gray-400 hover:text-white transition-colors">Book a Call</a>
                             <a href="login.html" className="text-sm text-gray-400 hover:text-white transition-colors">Sign In</a>
@@ -139,6 +140,7 @@
                     {menuOpen && (
                         <div className="md:hidden bg-dark/95 backdrop-blur-xl border-b border-dark-border px-6 py-4 flex flex-col gap-4">
                             <a href="#how-it-works" onClick={() => setMenuOpen(false)} className="text-sm text-gray-400 hover:text-white transition-colors">How It Works</a>
+                            <a href="#demo" onClick={() => setMenuOpen(false)} className="text-sm text-gray-400 hover:text-white transition-colors">Watch Demo</a>
                             <a href="#pricing" onClick={() => setMenuOpen(false)} className="text-sm text-gray-400 hover:text-white transition-colors">Pricing</a>
                             <a href={CALENDLY_URL} target="_blank" onClick={() => setMenuOpen(false)} className="text-sm text-gray-400 hover:text-white transition-colors">Book a Call</a>
                             <a href="login.html" className="text-sm text-gray-400 hover:text-white transition-colors">Sign In</a>
@@ -171,8 +173,8 @@
                             <a href={CALENDLY_URL} target="_blank" className="bg-blue-500 hover:bg-blue-600 text-white font-medium px-8 py-3.5 rounded-full transition-colors text-base">
                                 Book a Free Strategy Call
                             </a>
-                            <a href="#how-it-works" className="border border-gray-700 hover:border-gray-500 text-white font-medium px-8 py-3.5 rounded-full transition-colors text-base">
-                                See How It Works
+                            <a href="#demo" className="border border-gray-700 hover:border-gray-500 text-white font-medium px-8 py-3.5 rounded-full transition-colors text-base flex items-center gap-2">
+                                <span>&#9654;</span> Watch Demo
                             </a>
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 max-w-2xl mx-auto">
@@ -189,6 +191,42 @@
                                 <div className="text-sm text-gray-500">guarantee</div>
                             </div>
                         </div>
+                    </div>
+                </section>
+            );
+        }
+
+        function DemoVideo() {
+            const ref = useFadeIn();
+            return (
+                <section id="demo" className="py-20 px-6">
+                    <div ref={ref} className="fade-in max-w-4xl mx-auto text-center">
+                        <div className="inline-flex items-center gap-2 bg-blue-500/10 border border-blue-500/20 rounded-full px-4 py-1.5 mb-6">
+                            <Icon name="Play" size={14} className="text-blue-400" />
+                            <span className="text-sm text-blue-400">Watch 3-Minute Demo</span>
+                        </div>
+                        <h2 className="text-3xl md:text-4xl font-bold mb-4">See How Brokers Are Filling Their Calendar</h2>
+                        <p className="text-gray-400 text-lg mb-10 max-w-2xl mx-auto">Watch a quick walkthrough of how BrokerPipeline finds, qualifies, and books appointments — so you just show up and close.</p>
+
+                        <div className="relative rounded-2xl overflow-hidden border border-dark-border bg-dark-card aspect-video">
+                            <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-b from-dark-card via-dark/80 to-dark">
+                                <div className="flex flex-col items-center gap-6">
+                                    <div className="w-20 h-20 bg-blue-500/20 border-2 border-blue-500/40 rounded-full flex items-center justify-center">
+                                        <Icon name="Video" size={32} className="text-blue-400" />
+                                    </div>
+                                    <div>
+                                        <p className="text-white text-lg font-semibold mb-2">Demo video coming soon</p>
+                                        <p className="text-gray-400 text-sm mb-6">Book a call to see a live walkthrough of the platform</p>
+                                        <a href={CALENDLY_URL} target="_blank"
+                                           className="inline-flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium px-6 py-3 rounded-full transition-colors">
+                                            <Icon name="Calendar" size={16} />
+                                            Book a Live Walkthrough
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <p className="text-gray-500 text-sm mt-4">No signup required. See real results from real brokers.</p>
                     </div>
                 </section>
             );
@@ -438,6 +476,7 @@
                 <div className="min-h-screen">
                     <Navbar />
                     <Hero />
+                    <DemoVideo />
                     <HowItWorks />
                     <WhatsIncluded />
                     <Pricing />

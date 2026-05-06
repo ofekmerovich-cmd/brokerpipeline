@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Guide — BrokerPipeline.ai</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body, #root { height: 100%; }
+        body {
+            background: #0A0A0A;
+            color: #fff;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #2A2A2A; border-radius: 99px; }
+        .sidebar { transition: transform 0.25s cubic-bezier(.4,0,.2,1); }
+        input:focus, textarea:focus, select:focus { outline: none; }
+        .section-body { overflow: hidden; transition: max-height 0.35s cubic-bezier(.4,0,.2,1), opacity 0.25s ease; }
+        .section-body.collapsed { max-height: 0 !important; opacity: 0; }
+        .section-body.expanded { opacity: 1; }
+        .chevron-icon { transition: transform 0.25s ease; }
+        .chevron-icon.rotated { transform: rotate(180deg); }
+        code { font-family: 'SF Mono', Monaco, Consolas, monospace; background: rgba(37,99,235,0.1); color: #60A5FA; padding: 1px 6px; border-radius: 4px; font-size: 0.8em; }
+    </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+// -- Supabase ----------------------------------------------------------------
+const SUPABASE_URL      = 'https://glokxezbcrelrndcbhhs.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdsb2t4ZXpiY3JlbHJuZGNiaGhzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5NzMxNzEsImV4cCI6MjA5MzU0OTE3MX0.imnH5pmrXpiKz18fzxyF78b23luNNmu9izM3yBSlbQ4';
+
+const ADMIN_EMAIL = 'admin@brokerpipeline.ai';
+
+let sb = null;
+try {
+    if (typeof supabase !== 'undefined' && supabase.createClient) {
+        sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    }
+} catch(e) { console.warn('Supabase init failed:', e); }
+
+// -- Icon ---------------------------------------------------------------------
+function Icon({ name, size = 18, color = 'currentColor', className = '' }) {
+    const ref = useRef(null);
+    useEffect(() => {
+        if (!ref.current || !lucide?.icons?.[name]) return;
+        ref.current.innerHTML = '';
+        const svg = lucide.createElement(lucide.icons[name]);
+        svg.setAttribute('width', size);
+        svg.setAttribute('height', size);
+        svg.setAttribute('stroke', color);
+        svg.style.display = 'block';
+        svg.style.flexShrink = '0';
+        ref.current.appendChild(svg);
+    }, [name, size, color]);
+    return <span ref={ref} className={`inline-flex items-center ${className}`} />;
+}
+
+// -- Sidebar ------------------------------------------------------------------
+const NAV = [
+    { id: 'clients',   label: 'Clients Overview', icon: 'Users', href: 'admin.html' },
+    { id: 'addleads',  label: 'Add Leads',        icon: 'UserPlus', href: 'admin.html' },
+    { id: 'settings',  label: 'Client Settings',  icon: 'Settings', href: 'admin.html' },
+    { id: 'leadmachine', label: 'Lead Machine', icon: 'Zap', href: 'lead-machine.html' },
+    { id: 'voiceagent', label: 'Voice Agent', icon: 'Bot', href: 'voice-agent.html' },
+    { id: 'analytics', label: 'Analytics', icon: 'BarChart3', href: 'analytics.html' },
+    { id: 'integrations', label: 'Integrations', icon: 'Plug', href: 'integrations.html' },
+    { id: 'operations', label: 'Operations', icon: 'ClipboardList', href: 'operations.html' },
+    { id: 'videoguide', label: 'Video Guide', icon: 'Video', href: 'video-guide.html' },
+];
+
+function Sidebar({ open, setOpen }) {
+    return (
+        <>
+            {open && (
+                <div className="fixed inset-0 bg-black/60 z-20 md:hidden" onClick={() => setOpen(false)} />
+            )}
+            <aside
+                className={`sidebar fixed inset-y-0 left-0 z-30 w-60 flex flex-col
+                    ${open ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}
+                style={{ background: '#0D0D0D', borderRight: '1px solid #1A1A1A' }}
+            >
+                <div className="h-14 flex items-center px-5" style={{ borderBottom: '1px solid #1A1A1A' }}>
+                    <a href="index.html" className="text-base font-bold">
+                        BrokerPipeline<span style={{ color: '#2563EB' }}>.ai</span>
+                    </a>
+                    <span className="ml-2 px-2 py-0.5 rounded text-[10px] font-bold" style={{ background: 'rgba(239,68,68,0.15)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.25)' }}>
+                        ADMIN
+                    </span>
+                </div>
+
+                <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
+                    {NAV.map(item => {
+                        const active = item.id === 'videoguide';
+                        return (
+                            <button
+                                key={item.id}
+                                onClick={() => { if (item.href && item.id !== 'videoguide') { window.location.href = item.href; return; } setOpen(false); }}
+                                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-left transition-colors"
+                                style={{
+                                    background: active ? 'rgba(37,99,235,0.1)' : 'transparent',
+                                    color: active ? '#2563EB' : '#9CA3AF',
+                                }}
+                                onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; e.currentTarget.style.color = active ? '#2563EB' : '#fff'; }}
+                                onMouseLeave={e => { e.currentTarget.style.background = active ? 'rgba(37,99,235,0.1)' : 'transparent'; e.currentTarget.style.color = active ? '#2563EB' : '#9CA3AF'; }}
+                            >
+                                <Icon name={item.icon} size={16} color={active ? '#2563EB' : 'currentColor'} />
+                                {item.label}
+                            </button>
+                        );
+                    })}
+                </nav>
+
+                <div className="px-4 py-3" style={{ borderTop: '1px solid #1A1A1A' }}>
+                    <button
+                        onClick={() => { window.location.href = 'login.html'; }}
+                        className="flex items-center gap-2 text-xs text-gray-500 hover:text-white transition-colors"
+                    >
+                        <Icon name="LogOut" size={14} />
+                        Sign Out
+                    </button>
+                </div>
+            </aside>
+        </>
+    );
+}
+
+// -- Top bar ------------------------------------------------------------------
+function TopBar({ open, setOpen }) {
+    return (
+        <header
+            className="h-14 flex items-center justify-between px-5 shrink-0"
+            style={{ borderBottom: '1px solid #1A1A1A', background: '#0A0A0A' }}
+        >
+            <div className="flex items-center gap-3">
+                <button onClick={() => setOpen(!open)} className="md:hidden text-gray-400 hover:text-white transition-colors">
+                    <Icon name="Menu" size={20} />
+                </button>
+                <span className="text-sm text-gray-400">
+                    Admin Panel
+                </span>
+            </div>
+            <div
+                className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
+                style={{ background: '#EF4444' }}
+            >
+                A
+            </div>
+        </header>
+    );
+}
+
+// -- Accordion Section --------------------------------------------------------
+function AccordionSection({ icon, title, children, defaultOpen = false }) {
+    const [open, setOpen] = useState(defaultOpen);
+    const bodyRef = useRef(null);
+    const [maxH, setMaxH] = useState(defaultOpen ? '2000px' : '0');
+
+    useEffect(() => {
+        if (bodyRef.current) {
+            setMaxH(open ? bodyRef.current.scrollHeight + 'px' : '0');
+        }
+    }, [open]);
+
+    return (
+        <div className="rounded-xl overflow-hidden" style={{ background: '#111', border: '1px solid #1A1A1A' }}>
+            <button
+                onClick={() => setOpen(!open)}
+                className="w-full flex items-center gap-3 px-5 py-4 text-left transition-colors"
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+            >
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'rgba(37,99,235,0.12)' }}>
+                    <Icon name={icon} size={16} color="#2563EB" />
+                </div>
+                <span className="flex-1 text-sm font-semibold">{title}</span>
+                <span className={`chevron-icon ${open ? 'rotated' : ''}`}>
+                    <Icon name="ChevronDown" size={16} color="#9CA3AF" />
+                </span>
+            </button>
+            <div
+                ref={bodyRef}
+                className={`section-body ${open ? 'expanded' : 'collapsed'}`}
+                style={{ maxHeight: maxH }}
+            >
+                <div className="px-5 pb-5 pt-1">
+                    {children}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// -- Section 1: Recording Setup -----------------------------------------------
+function RecordingSetup() {
+    const steps = [
+        'Download OBS Studio from obsproject.com',
+        <span>Settings: Output &rarr; Recording &rarr; Format: <code>mp4</code>, Encoder: <code>x264</code></span>,
+        <span>Video: Base Resolution <code>1920x1080</code>, Output Resolution <code>1920x1080</code>, FPS <code>60</code></span>,
+        <span>Audio: Desktop Audio <code>ON</code>, Mic Audio <code>ON</code> (for narration)</span>,
+        <span>Add Source &rarr; Window Capture &rarr; Select Chrome browser</span>,
+        <span>Navigate to <code>brokerpipeline.vercel.app</code> and log in</span>,
+        'Record each dashboard section separately for easy editing',
+        'Record the login flow, leads table, appointments, reports, ROI calculator',
+        'Tip: Use a clean browser profile with no extensions visible',
+        'Tip: Set browser zoom to 90% so more content is visible',
+    ];
+
+    return (
+        <AccordionSection icon="Monitor" title="Recording Setup — OBS Studio" defaultOpen={true}>
+            <div className="space-y-3">
+                {steps.map((step, i) => (
+                    <div key={i} className="flex items-start gap-3">
+                        <div
+                            className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-xs font-bold"
+                            style={{ background: 'rgba(37,99,235,0.15)', color: '#2563EB' }}
+                        >
+                            {i + 1}
+                        </div>
+                        <p className="text-sm text-gray-300 pt-1">{step}</p>
+                    </div>
+                ))}
+            </div>
+        </AccordionSection>
+    );
+}
+
+// -- Section 2: ElevenLabs Voiceover ------------------------------------------
+function VoiceoverSetup() {
+    const steps = [
+        'Go to elevenlabs.io and sign in',
+        <span>Select Voice: <code>Adam</code> (natural American male)</span>,
+        <span>Settings: Stability <code>0.50</code>, Similarity <code>0.75</code>, Style <code>0.30</code></span>,
+        <span>For Version A (90s hero): paste the hero script from <code>assets/voiceover_script.txt</code></span>,
+        'For Version B (3min demo): paste the full demo script',
+        'Click Generate and preview — adjust stability if too robotic',
+        'Download as MP3 (high quality)',
+        <span>Expected file sizes: ~<code>1.5MB</code> for 90s, ~<code>4MB</code> for 3min</span>,
+    ];
+
+    return (
+        <AccordionSection icon="Mic" title="ElevenLabs Voiceover">
+            <div className="space-y-3">
+                {steps.map((step, i) => (
+                    <div key={i} className="flex items-start gap-3">
+                        <div
+                            className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-xs font-bold"
+                            style={{ background: 'rgba(168,85,247,0.12)', color: '#A855F7' }}
+                        >
+                            {i + 1}
+                        </div>
+                        <p className="text-sm text-gray-300 pt-1">{step}</p>
+                    </div>
+                ))}
+            </div>
+        </AccordionSection>
+    );
+}
+
+// -- Section 3: Editing in CapCut ---------------------------------------------
+function EditingCapCut() {
+    const steps = [
+        <span>Create new project in CapCut Desktop (free) — <code>1920x1080</code>, <code>30fps</code></span>,
+        'Import: voiceover MP3 + all OBS screen recordings',
+        'Place voiceover on audio track 1',
+        <span>Match screen recordings to <code>[SCREEN:]</code> markers in the script</span>,
+        <span>Add transitions: <code>0.5s</code> cross-dissolve between clips</span>,
+        <span>Auto-captions: Text &rarr; Auto Captions &rarr; English &rarr; Style: white text, black outline, bottom center</span>,
+        <span>Background music: Search "corporate" or "tech" — set volume to <code>15%</code></span>,
+        'Intro: Add BrokerPipeline logo on black background for 2 seconds',
+        <span>Outro: Add CTA text "Start at brokerpipeline.ai" + logo for 5 seconds</span>,
+        'Review full video, check audio sync, export',
+    ];
+
+    return (
+        <AccordionSection icon="Scissors" title="Editing in CapCut">
+            <div className="space-y-3">
+                {steps.map((step, i) => (
+                    <div key={i} className="flex items-start gap-3">
+                        <div
+                            className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-xs font-bold"
+                            style={{ background: 'rgba(34,197,94,0.12)', color: '#22C55E' }}
+                        >
+                            {i + 1}
+                        </div>
+                        <p className="text-sm text-gray-300 pt-1">{step}</p>
+                    </div>
+                ))}
+            </div>
+        </AccordionSection>
+    );
+}
+
+// -- Section 4: Publishing & Distribution -------------------------------------
+function Publishing() {
+    const videos = [
+        { video: 'Hero (Version A)',      duration: '90 seconds', platform: 'YouTube', visibility: 'Unlisted',  where: 'Embedded on landing page hero' },
+        { video: 'Full Demo (Version B)', duration: '3 minutes',  platform: 'Loom',    visibility: 'Link-only', where: 'Sent via email after Aria call' },
+        { video: 'Full Demo (Version B)', duration: '3 minutes',  platform: 'YouTube', visibility: 'Unlisted',  where: 'Backup embed for email clients blocking Loom' },
+    ];
+
+    return (
+        <AccordionSection icon="Upload" title="Publishing & Distribution">
+            <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                    <thead>
+                        <tr style={{ borderBottom: '1px solid #1F1F1F' }}>
+                            <th className="text-left py-2.5 pr-4 text-xs text-gray-500 font-medium">Video</th>
+                            <th className="text-left py-2.5 pr-4 text-xs text-gray-500 font-medium">Duration</th>
+                            <th className="text-left py-2.5 pr-4 text-xs text-gray-500 font-medium">Platform</th>
+                            <th className="text-left py-2.5 pr-4 text-xs text-gray-500 font-medium">Visibility</th>
+                            <th className="text-left py-2.5 text-xs text-gray-500 font-medium">Where Used</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {videos.map((v, i) => (
+                            <tr key={i} style={{ borderBottom: i < videos.length - 1 ? '1px solid #1A1A1A' : 'none' }}>
+                                <td className="py-2.5 pr-4 text-white font-medium">{v.video}</td>
+                                <td className="py-2.5 pr-4 text-gray-300">{v.duration}</td>
+                                <td className="py-2.5 pr-4 text-blue-400">{v.platform}</td>
+                                <td className="py-2.5 pr-4">
+                                    <span className="inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium border bg-blue-500/15 text-blue-400 border-blue-500/25">{v.visibility}</span>
+                                </td>
+                                <td className="py-2.5 text-gray-400">{v.where}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+
+            <div className="mt-5 space-y-3">
+                <div className="px-4 py-3 rounded-lg" style={{ background: 'rgba(37,99,235,0.08)', border: '1px solid rgba(37,99,235,0.15)' }}>
+                    <div className="flex items-center gap-2 mb-1.5">
+                        <Icon name="Youtube" size={14} color="#60A5FA" />
+                        <span className="text-sm text-blue-300 font-medium">YouTube Upload</span>
+                    </div>
+                    <p className="text-sm text-gray-400">Upload &rarr; Set Unlisted &rarr; Copy embed URL &rarr; Update <code>index.html</code> iframe src</p>
+                </div>
+                <div className="px-4 py-3 rounded-lg" style={{ background: 'rgba(168,85,247,0.08)', border: '1px solid rgba(168,85,247,0.15)' }}>
+                    <div className="flex items-center gap-2 mb-1.5">
+                        <Icon name="Link" size={14} color="#C084FC" />
+                        <span className="text-sm text-purple-300 font-medium">Loom Upload</span>
+                    </div>
+                    <p className="text-sm text-gray-400">Upload &rarr; Copy share link &rarr; Add to Instantly.ai email template</p>
+                </div>
+            </div>
+        </AccordionSection>
+    );
+}
+
+// -- Section 5: Email Follow-Up Workflow --------------------------------------
+function EmailWorkflow() {
+    const steps = [
+        { text: 'Aria makes initial call to broker (uses main agent script)', color: '#2563EB', bg: 'rgba(37,99,235,0.12)' },
+        { text: 'If interested: trigger Make.com webhook to send demo video email', color: '#2563EB', bg: 'rgba(37,99,235,0.12)' },
+        { text: <span>Email template: <code>assets/aria_video_email.html</code></span>, color: '#2563EB', bg: 'rgba(37,99,235,0.12)' },
+        { text: 'Wait 24 hours', color: '#EAB308', bg: 'rgba(234,179,8,0.12)' },
+        { text: <span>Aria makes follow-up call (uses post-call script from <code>assets/aria_post_call_script.txt</code>)</span>, color: '#A855F7', bg: 'rgba(168,85,247,0.12)' },
+        { text: 'If they watched: go for close, send pricing link', color: '#22C55E', bg: 'rgba(34,197,94,0.12)' },
+        { text: 'If not watched: resend video, schedule callback in 48 hours', color: '#EAB308', bg: 'rgba(234,179,8,0.12)' },
+        { text: 'After 3 attempts with no response: mark lead as "Cold" in dashboard', color: '#EF4444', bg: 'rgba(239,68,68,0.12)' },
+    ];
+
+    return (
+        <AccordionSection icon="Mail" title="Post-Call Email Workflow">
+            <div className="space-y-3">
+                {steps.map((step, i) => (
+                    <div key={i} className="flex items-start gap-3">
+                        <div className="flex flex-col items-center">
+                            <div
+                                className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-xs font-bold"
+                                style={{ background: step.bg, color: step.color }}
+                            >
+                                {i + 1}
+                            </div>
+                            {i < steps.length - 1 && (
+                                <div className="w-0.5 h-4 mt-1" style={{ background: '#1F1F1F' }} />
+                            )}
+                        </div>
+                        <p className="text-sm text-gray-300 pt-1">{step.text}</p>
+                    </div>
+                ))}
+            </div>
+        </AccordionSection>
+    );
+}
+
+// -- Video Guide Page ---------------------------------------------------------
+function VideoGuidePage() {
+    return (
+        <div className="space-y-4">
+            <div className="mb-6">
+                <h1 className="text-lg font-semibold">Video Production Guide</h1>
+                <p className="text-sm text-gray-500 mt-0.5">Step-by-step instructions for creating demo videos</p>
+            </div>
+
+            <RecordingSetup />
+            <VoiceoverSetup />
+            <EditingCapCut />
+            <Publishing />
+            <EmailWorkflow />
+        </div>
+    );
+}
+
+// -- Root App -----------------------------------------------------------------
+function App() {
+    const [sbOpen, setSbOpen]   = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [user, setUser]       = useState(null);
+
+    useEffect(() => {
+        (async () => {
+            try {
+                if (sb) {
+                    const { data: { session }, error } = await sb.auth.getSession();
+                    if (error || !session || session.user.email !== ADMIN_EMAIL) {
+                        setUser({ email: ADMIN_EMAIL });
+                        setLoading(false);
+                        return;
+                    }
+                    setUser(session.user);
+                } else {
+                    setUser({ email: ADMIN_EMAIL });
+                }
+            } catch (err) {
+                console.warn('Init failed, using demo mode:', err);
+                setUser({ email: ADMIN_EMAIL });
+            }
+            setLoading(false);
+        })();
+    }, []);
+
+    if (loading) {
+        return (
+            <div className="h-screen flex items-center justify-center" style={{ background: '#0A0A0A' }}>
+                <div className="flex items-center gap-3 text-gray-400 text-sm">
+                    <div className="w-4 h-4 rounded-full border-2 border-t-transparent animate-spin"
+                         style={{ borderColor: '#2563EB', borderTopColor: 'transparent' }} />
+                    Loading...
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="h-screen flex overflow-hidden" style={{ background: '#0A0A0A' }}>
+            <Sidebar open={sbOpen} setOpen={setSbOpen} />
+            <div className="flex-1 flex flex-col md:ml-60 overflow-hidden">
+                <TopBar open={sbOpen} setOpen={setSbOpen} />
+                <main className="flex-1 overflow-y-auto p-5 md:p-6">
+                    <VideoGuidePage />
+                </main>
+            </div>
+        </div>
+    );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

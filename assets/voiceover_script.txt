@@ -1,0 +1,103 @@
+===============================================================================
+            BROKERPIPELINE.AI — VOICEOVER SCRIPTS FOR ELEVENLABS
+            Voice: "Adam" | Stability: 0.50 | Clarity: 0.75 | Style: 0.30
+===============================================================================
+
+
+VERSION A — WEBSITE HERO VIDEO (90 seconds)
+Paste this into ElevenLabs as one block.
+───────────────────────────────────────────
+
+[SCREEN: Dark cinematic intro — BrokerPipeline.ai logo fades in, 2 seconds]
+
+What if you never had to cold call for leads again?
+
+[SCREEN: Show a stressed broker at a desk with a phone, cross it out with a red X]
+
+Right now, most independent insurance brokers spend three or more hours a day prospecting. Dialing. Emailing. Chasing people who never pick up. And at the end of the week? Maybe one or two appointments to show for it.
+
+[SCREEN: Transition to BrokerPipeline dashboard — leads table filling up with green "New" badges]
+
+We built BrokerPipeline to fix that. Our AI finds your ideal prospects, reaches out with personalized emails, follows up with a voice agent that sounds completely human, and books qualified appointments directly into your calendar.
+
+[SCREEN: Show appointments page with upcoming meetings, then switch to reports page with charts going up]
+
+You do nothing until the call is already booked.
+
+Our average broker sees fifteen to twenty-five qualified leads and eight to twelve booked appointments in the first thirty days. That is not a projection — that is what is happening right now.
+
+[SCREEN: Show a testimonial card — "I went from 2 appointments a week to 4 a day. This changed my business." — Mike D., Agency Owner, Texas]
+
+Mike from Texas went from two appointments a week to four a day. His words, not ours.
+
+[SCREEN: Zoom into the landing page CTA button, pulsing blue glow]
+
+Here is the thing — we only work with one broker per zip code. So once your area is taken, it is taken.
+
+Click below to check if your territory is still available.
+
+[SCREEN: CTA button "Check Availability" with arrow, hold for 3 seconds. Fade to logo.]
+
+--- END VERSION A ---
+Total estimated duration: ~85 seconds
+
+
+
+VERSION B — FULL DEMO VIDEO (3 minutes, sent after Aria call)
+Paste this into ElevenLabs as one block.
+───────────────────────────────────────────
+
+[SCREEN: BrokerPipeline logo intro, 2 seconds, then transition to dashboard]
+
+Hey — thanks for speaking with Aria from BrokerPipeline. She mentioned you might be interested in seeing exactly how this works, so let me walk you through it real quick.
+
+[SCREEN: Show the landing page hero section briefly, then navigate to login page and sign in]
+
+BrokerPipeline is an AI-powered system that fills your calendar with qualified insurance appointments — without you lifting a finger. Let me show you what the inside looks like.
+
+[SCREEN: Dashboard overview page — stat cards showing leads, appointments, conversion rate]
+
+This is your personal dashboard. Right here you can see how many leads we have sourced for you, how many have been contacted, and how many turned into booked appointments. Everything updates in real time.
+
+[SCREEN: Click on "My Leads" tab — show the searchable leads table with names, companies, scores]
+
+Step one — we find your ideal prospects. We use AI to search databases of independent insurance brokers, agency owners, and decision-makers in your target area. Every lead is scored and verified before it hits your pipeline.
+
+[SCREEN: Show email sequence preview or Lead Machine page with email templates]
+
+Step two — we reach out. Our system sends personalized email sequences — not spam, but real messages that reference their business, their specialty, and what they actually care about. Open rates average around forty percent.
+
+[SCREEN: Show Voice Agent page — Aria's agent card with call logs]
+
+Step three — we follow up by phone. Aria, the voice agent you just spoke with, calls every lead that opens an email or clicks a link. She qualifies them, answers basic questions, and books the appointment right there on the call.
+
+[SCREEN: Show Appointments page with upcoming meeting cards]
+
+Step four — the appointment lands on your calendar. You get a notification, a briefing on who the prospect is, what they need, and what to talk about. You just show up and close.
+
+[SCREEN: Show Reports page with weekly charts, then ROI Calculator with sliders]
+
+Step five — you track everything. Weekly reports show you exactly what is working. The ROI calculator lets you see the math — if just two leads become clients, you have paid for a full year of the service.
+
+[SCREEN: Show ROI calculator with numbers: 10 appointments, 30% close rate, $5,000 avg policy = $15,000 revenue vs $3,497 cost]
+
+Let me put that in perspective. At our Growth plan — thirty-four ninety-seven a month — if you close just two deals from the leads we send you, you are looking at a ten X return. Minimum.
+
+[SCREEN: Show pricing page with 3 plans, Growth plan highlighted]
+
+And here is what makes this different from every other lead gen company — we only take one broker per zip code. That means no competition. The leads in your area are yours and yours alone.
+
+[SCREEN: Show the urgency banner "Limited: Only 3 spots available this month"]
+
+Right now we have three spots open for this month. Once they fill up, the next opening is thirty days out.
+
+[SCREEN: Zoom into the "Start Growing" CTA button on pricing page, pulsing glow]
+
+Click the link below to pick your plan and lock in your territory. If you have any questions at all, just reply to this email or Aria will call you back.
+
+[SCREEN: Logo outro with text "BrokerPipeline.ai — We fill your calendar." Hold 5 seconds]
+
+Looking forward to working with you.
+
+--- END VERSION B ---
+Total estimated duration: ~2 minutes 50 seconds
