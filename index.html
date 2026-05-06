@@ -218,6 +218,7 @@
             const [playing, setPlaying] = useState(false);
             const timerRef = useRef([]);
             const runningRef = useRef(false);
+            const cardRef = useRef(null);
 
             const LEADS = [
                 { name: 'Sarah Mitchell', need: 'Auto + Home', loc: 'Dallas, TX', score: 94, hot: true },
@@ -313,17 +314,21 @@
                 addTimer(function(){ setShowReplay(true); runningRef.current = false; }, 23000);
             };
 
-            // IntersectionObserver - runs once, never re-creates
+            // IntersectionObserver on the card element, delayed to avoid scroll-restore
             useEffect(() => {
-                var el = sectionRef.current;
-                if (!el) return;
-                var obs = new IntersectionObserver(function(entries) {
-                    if (entries[0].isIntersecting && !runningRef.current) {
-                        startDemo();
-                    }
-                }, { threshold: 0.5 });
-                obs.observe(el);
-                return function() { obs.disconnect(); clearTimers(); };
+                var setupTimer = setTimeout(function() {
+                    var el = cardRef.current;
+                    if (!el) return;
+                    var obs = new IntersectionObserver(function(entries) {
+                        if (entries[0].isIntersecting && !runningRef.current) {
+                            startDemo();
+                        }
+                    }, { threshold: 0.3 });
+                    obs.observe(el);
+                    // Store for cleanup
+                    cardRef._obs = obs;
+                }, 600);
+                return function() { clearTimeout(setupTimer); if (cardRef._obs) cardRef._obs.disconnect(); clearTimers(); };
             }, []);
 
             const renderPhase1 = () => (
@@ -495,7 +500,7 @@
                         <h2 className="text-3xl md:text-4xl font-bold mb-3">See Your Dashboard in Action</h2>
                         <p className="text-gray-400 text-lg mb-10 max-w-2xl mx-auto">Watch how leads flow into your pipeline in real-time</p>
 
-                        <div className={'rounded-2xl border bg-dark-card overflow-hidden transition-all duration-500 ' + (playing ? 'border-blue-500/30 shadow-lg shadow-blue-500/10' : 'border-dark-border')} style={{ background: '#111' }}>
+                        <div ref={cardRef} className={'rounded-2xl border bg-dark-card overflow-hidden transition-all duration-500 ' + (playing ? 'border-blue-500/30 shadow-lg shadow-blue-500/10' : 'border-dark-border')} style={{ background: '#111' }}>
                             {/* Browser chrome */}
                             <div className="flex items-center gap-2 px-4 py-2.5 border-b border-white/5 bg-white/[0.02]">
                                 <div className="flex gap-1.5">
