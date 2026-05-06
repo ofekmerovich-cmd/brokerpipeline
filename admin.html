@@ -335,6 +335,68 @@ function AddLeadsPage({ clients }) {
     const [result, setResult] = useState(null);
 
     const SPECIALTIES = ['Commercial','Life','Health','Auto','Home','Medicare','Cyber','Agriculture','Professional'];
+    const fileRef = React.useRef(null);
+    const [csvProgress, setCsvProgress] = useState(null);
+
+    const downloadTemplate = () => {
+        const csv = 'First Name,Last Name,Company,Title,Email,Phone,LinkedIn URL,City,State\nJohn,Doe,Acme Insurance,Insurance Broker,john@acmeins.com,(555) 123-4567,https://linkedin.com/in/johndoe,Austin,TX\n';
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'apollo-leads-template.csv';
+        a.click();
+    };
+
+    const handleCsvUpload = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const clientId = selectedClient || '261ad456-1a56-4910-8252-7042290b2f71';
+        setResult(null);
+        const text = await file.text();
+        const lines = text.trim().split('\n');
+        if (lines.length < 2) { setResult({ success: false, message: 'CSV has no data rows.' }); return; }
+        const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/['"]/g, ''));
+        const rows = lines.slice(1).map(line => {
+            const vals = line.split(',').map(v => v.trim().replace(/^["']|["']$/g, ''));
+            const obj = {};
+            headers.forEach((h, i) => { obj[h] = vals[i] || ''; });
+            return obj;
+        });
+        const valid = rows.filter(r => r.email || r['email address']);
+        const skipped = rows.length - valid.length;
+        setCsvProgress({ current: 0, total: valid.length });
+        let imported = 0;
+        const batch = valid.map(r => ({
+            user_id: clientId,
+            name: [(r['first name'] || r.first_name || ''), (r['last name'] || r.last_name || '')].filter(Boolean).join(' '),
+            company: r.company || r.organization || '',
+            email: r.email || r['email address'] || '',
+            phone: r.phone || r['phone number'] || '',
+            specialty: r.title || r['job title'] || 'Insurance',
+            score: 7,
+            status: 'New',
+            source: 'apollo_csv',
+            linkedin_url: r['linkedin url'] || r.linkedin || '',
+            city: r.city || '',
+            state: r.state || '',
+            date_added: new Date().toISOString().split('T')[0],
+        }));
+        const chunkSize = 25;
+        for (let i = 0; i < batch.length; i += chunkSize) {
+            const chunk = batch.slice(i, i + chunkSize);
+            setCsvProgress({ current: Math.min(i + chunkSize, batch.length), total: batch.length });
+            if (sb) {
+                const { error } = await sb.from('leads').insert(chunk);
+                if (!error) imported += chunk.length;
+            } else {
+                imported += chunk.length;
+            }
+        }
+        setCsvProgress(null);
+        setResult({ success: true, message: `${imported} leads imported${skipped > 0 ? ` (${skipped} skipped — no email)` : ''}` });
+        e.target.value = '';
+    };
+
     const [showApollo, setShowApollo] = useState(false);
     const [apolloCount, setApolloCount] = useState(25);
     const [apolloState, setApolloState] = useState('All States');
@@ -494,6 +556,27 @@ function AddLeadsPage({ clients }) {
                     <Icon name="Globe" size={15} color="#A78BFA" />
                     Import from Apollo
                 </button>
+                <button
+                    onClick={() => fileRef.current?.click()}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all"
+                    style={{ background: 'rgba(234,179,8,0.1)', border: '1px solid rgba(234,179,8,0.3)', color: '#FBBF24' }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(234,179,8,0.18)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'rgba(234,179,8,0.1)'}
+                >
+                    <Icon name="FolderOpen" size={15} color="#FBBF24" />
+                    Upload Apollo CSV
+                </button>
+                <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={handleCsvUpload} />
+                <button
+                    onClick={downloadTemplate}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all"
+                    style={{ background: '#111', border: '1px solid #1A1A1A', color: '#9CA3AF' }}
+                    onMouseEnter={e => e.currentTarget.style.borderColor = '#333'}
+                    onMouseLeave={e => e.currentTarget.style.borderColor = '#1A1A1A'}
+                >
+                    <Icon name="Download" size={15} color="#9CA3AF" />
+                    Download Template
+                </button>
             </div>
 
             {/* Apollo Import Modal */}
@@ -616,6 +699,19 @@ function AddLeadsPage({ clients }) {
                     >
                         <Icon name="Plus" size={15} color="#60A5FA" /> Add another lead
                     </button>
+                </div>
+            )}
+
+            {/* CSV upload progress */}
+            {csvProgress && (
+                <div className="rounded-xl p-4 space-y-2" style={{ background: '#111', border: '1px solid #1A1A1A' }}>
+                    <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-300">Importing {csvProgress.current} of {csvProgress.total}...</span>
+                        <span className="text-gray-500">{Math.round((csvProgress.current / csvProgress.total) * 100)}%</span>
+                    </div>
+                    <div className="w-full h-2 rounded-full" style={{ background: '#1A1A1A' }}>
+                        <div className="h-2 rounded-full transition-all" style={{ background: '#2563EB', width: `${(csvProgress.current / csvProgress.total) * 100}%` }} />
+                    </div>
                 </div>
             )}
 
