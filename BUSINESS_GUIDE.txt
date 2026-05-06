@@ -1,0 +1,308 @@
+===============================================================================
+                    BROKERPIPELINE.AI — BUSINESS OPERATIONS GUIDE
+                              Last Updated: 2026-05-06
+===============================================================================
+
+TABLE OF CONTENTS
+─────────────────
+1. System Overview
+2. What Works Now
+3. External Accounts Needed
+4. Stripe Setup Instructions
+5. Time to First Client
+6. Weekly Time Commitment
+7. Monthly Revenue Potential
+8. Quick-Start Checklist
+9. Webhook Endpoints Reference
+10. Troubleshooting
+
+===============================================================================
+1. SYSTEM OVERVIEW
+===============================================================================
+
+BrokerPipeline.ai is an AI-powered sales pipeline that books qualified
+insurance appointments for independent brokers and agency owners.
+
+Tech Stack:
+  - Frontend: Static HTML + React 18 (CDN) + Tailwind CSS
+  - Backend: Supabase (auth, database, edge functions, RLS)
+  - Hosting: Vercel (auto-deploys from GitHub)
+  - Repo: github.com/ofekmerovich-cmd/brokerpipeline
+
+Live URL: https://brokerpipeline.vercel.app
+
+Pages:
+  - index.html        Landing page (public)
+  - pricing.html      Pricing with 3 plans (public)
+  - login.html        Sign in / sign up
+  - onboarding.html   5-step client onboarding wizard
+  - dashboard.html    Client dashboard (leads, appointments, reports, ROI)
+  - admin.html        Admin panel (clients, add leads, settings)
+  - lead-machine.html ICP builder, email sequences, campaigns
+  - voice-agent.html  AI voice agent management
+  - analytics.html    Admin analytics dashboard
+  - integrations.html Integration hub, webhooks, API keys
+  - operations.html   Operations manual (checklists, workflows)
+
+===============================================================================
+2. WHAT WORKS NOW
+===============================================================================
+
+FULLY FUNCTIONAL:
+  [x] Landing page with hero, how-it-works, pricing preview, CTA
+  [x] Pricing page with 3 plans, FAQ, urgency banner
+  [x] User signup/login via Supabase Auth
+  [x] 5-step onboarding wizard (saves to database)
+  [x] Client dashboard with real data (20 Apollo leads imported)
+  [x] Admin panel with client management
+  [x] CSV lead import (admin)
+  [x] Lead export for Instantly.ai
+  [x] 7 Supabase Edge Functions (all ACTIVE):
+      - api-leads (insert leads via webhook)
+      - api-leads-update (update lead status)
+      - api-appointments (insert + email notification)
+      - api-reports (insert weekly reports)
+      - api-weekly-report (automated weekly emails)
+      - api-apollo-search (lead sourcing)
+      - send-admin-notification (admin alerts via Resend)
+  [x] Lead Machine UI (ICP builder, email sequences, campaigns)
+  [x] Voice Agent UI (agent builder, call triggers, call log)
+  [x] Analytics dashboard (MRR, charts, performance table)
+  [x] Integrations hub (7 tools, webhooks, API keys, system health)
+  [x] Operations manual with 7 sections
+  [x] ROI Calculator in client dashboard
+  [x] Demo/fallback mode on every page (works without Supabase)
+
+DATABASE (Supabase):
+  - leads: 36 rows (20 real Apollo contacts + demo data)
+  - appointments: 7 rows
+  - reports: 6 rows
+  - client_onboarding: 1 row
+  - daily_leads: 30 rows
+  - All tables have Row Level Security enabled
+
+KNOWN ISSUES (non-blocking):
+  - Admin CSV parser: split(',') breaks on fields with internal commas
+  - Admin CSV upload: RLS silently blocks inserts for non-owner user_ids
+    (workaround: use Supabase SQL editor for bulk imports)
+
+===============================================================================
+3. EXTERNAL ACCOUNTS NEEDED
+===============================================================================
+
+To fully operate the pipeline, set up these accounts:
+
+  1. APOLLO.IO (Lead Sourcing)
+     - Free plan: 25 email credits/month
+     - Use People Search with ICP filters
+     - URL: app.apollo.io
+     - Status: ACTIVE (used to import 20 real leads)
+
+  2. INSTANTLY.AI (Email Outreach)
+     - Plans start at $30/month
+     - Upload CSV leads, create email sequences
+     - IMPORTANT: Warm up email domain 2+ weeks before sending
+     - URL: app.instantly.ai
+     - Status: NEEDS SETUP
+
+  3. RETELL AI (Voice Agent)
+     - AI voice calling for follow-ups
+     - URL: app.retellai.com
+     - Status: NEEDS SETUP
+
+  4. CALENDLY (Meeting Booking)
+     - Free plan available
+     - Embed booking links in email sequences
+     - URL: calendly.com
+     - Status: NEEDS SETUP
+
+  5. MAKE.COM (Automation Workflows)
+     - Connects all tools together
+     - Free plan: 1,000 operations/month
+     - URL: make.com
+     - Status: NEEDS SETUP
+
+  6. RESEND (Email Notifications)
+     - Free plan: 100 emails/day
+     - Powers admin notification edge function
+     - URL: resend.com
+     - Status: NEEDS API KEY
+     - Add RESEND_API_KEY to Supabase Edge Function Secrets
+
+  7. STRIPE (Payments)
+     - Payment processing for subscriptions
+     - URL: dashboard.stripe.com
+     - Status: NEEDS SETUP (see Section 4)
+
+===============================================================================
+4. STRIPE SETUP INSTRUCTIONS
+===============================================================================
+
+Step 1: Create Stripe Account
+  - Go to dashboard.stripe.com and sign up
+  - Complete business verification
+
+Step 2: Create 3 Products
+  - Product 1: "BrokerPipeline Starter" — $1,497/month recurring
+  - Product 2: "BrokerPipeline Growth"  — $3,497/month recurring
+  - Product 3: "BrokerPipeline Scale"   — $6,997/month recurring
+
+Step 3: Create Payment Links
+  - For each product, create a Payment Link in Stripe
+  - Copy the payment link URL (e.g., https://buy.stripe.com/xxxxx)
+
+Step 4: Update pricing.html
+  - Replace the '#' placeholder in each plan's `stripe` field with the
+    real Stripe payment link URL
+  - Lines to update in pricing.html: search for `stripe: '#'`
+
+Step 5: Test
+  - Use Stripe test mode first
+  - Make a test purchase with card 4242 4242 4242 4242
+  - Verify webhook delivery if using Stripe webhooks
+
+===============================================================================
+5. TIME TO FIRST CLIENT
+===============================================================================
+
+Fastest path (assuming all accounts are ready):
+
+  Day 1:  Set up Instantly.ai account, start email warm-up
+  Day 1:  Set up Calendly with booking link
+  Day 1:  Create Stripe products and payment links
+  Day 1:  Update pricing.html with real Stripe links
+  Day 2:  Configure Make.com scenarios
+  Day 2:  Set up Resend and add API key to Supabase
+  Day 3-14: Email warm-up period (REQUIRED — do not skip)
+  Day 14: Pull first batch of leads from Apollo
+  Day 14: Upload leads to Instantly.ai, start campaign
+  Day 17-21: First replies and appointments
+
+  ESTIMATED: 2-3 weeks to first booked appointment
+  BLOCKER: Email warm-up period (14 days minimum)
+
+===============================================================================
+6. WEEKLY TIME COMMITMENT
+===============================================================================
+
+Per Client:
+  - Lead sourcing (Apollo):        30 min
+  - Campaign management:           15 min
+  - Voice agent monitoring:        20 min
+  - Appointment confirmations:     10 min
+  - Weekly report review:          10 min
+  - Client communication:          15 min
+  ──────────────────────────────────────
+  TOTAL PER CLIENT:              ~1.5-2 hours/week
+
+Admin/Overhead:
+  - System monitoring:             15 min/week
+  - Tool maintenance:              15 min/week
+  - New client onboarding:         2-3 hours (one-time per client)
+
+Scale Estimates:
+  - 1 client:   2-3 hours/week
+  - 5 clients:  8-12 hours/week
+  - 10 clients: 15-20 hours/week (consider hiring VA)
+
+===============================================================================
+7. MONTHLY REVENUE POTENTIAL
+===============================================================================
+
+  Clients    Plan Mix              Monthly Revenue    Annual Revenue
+  ─────────────────────────────────────────────────────────────────
+  1          1 Starter             $1,497             $17,964
+  3          1S + 1G + 1Sc         $11,991            $143,892
+  5          2S + 2G + 1Sc         $16,985            $203,820
+  10         3S + 5G + 2Sc         $35,970            $431,640
+  20         5S + 10G + 5Sc        $77,440            $929,280
+
+  S = Starter ($1,497)  G = Growth ($3,497)  Sc = Scale ($6,997)
+
+  Tool Costs (estimated monthly):
+  - Instantly.ai:  $30-$97
+  - Apollo.io:     $0-$49 (free tier for <5 clients)
+  - Retell AI:     $0-$50
+  - Make.com:      $0-$16
+  - Supabase:      $0 (free tier)
+  - Vercel:        $0 (free tier)
+  - Resend:        $0 (free tier up to 100 emails/day)
+  ──────────────────────────────────────
+  TOTAL OVERHEAD:  ~$80-$212/month
+
+  NET MARGIN: 95%+ at scale
+
+===============================================================================
+8. QUICK-START CHECKLIST
+===============================================================================
+
+  [ ] 1. Create Stripe account and 3 subscription products
+  [ ] 2. Update pricing.html with real Stripe payment links
+  [ ] 3. Set up Instantly.ai and start email warm-up (14 days)
+  [ ] 4. Set up Calendly booking page
+  [ ] 5. Create Resend account, add RESEND_API_KEY to Supabase secrets
+  [ ] 6. Set up Make.com account and connect scenarios
+  [ ] 7. (Optional) Set up Retell AI for voice agent
+  [ ] 8. Pull first batch of leads from Apollo.io
+  [ ] 9. Create first Instantly.ai campaign
+  [ ] 10. Share landing page and start outreach for clients
+  [ ] 11. First client signs up → follow onboarding checklist in operations.html
+
+===============================================================================
+9. WEBHOOK ENDPOINTS REFERENCE
+===============================================================================
+
+Base URL: https://glokxezbcrelrndcbhhs.supabase.co/functions/v1
+
+All endpoints require header: x-api-key: bp_live_a1b2c3d4e5f6g7h8i9j0k1l2
+
+  POST /api-leads
+  Body: { "user_id": "...", "name": "...", "email": "...", "company": "...",
+          "specialty": "...", "score": 7, "status": "New" }
+
+  POST /api-leads-update
+  Body: { "lead_id": "...", "status": "Contacted" }
+  Allowed statuses: New, Contacted, Replied, Booked, Lost
+
+  POST /api-appointments
+  Body: { "user_id": "...", "prospect_name": "...", "company": "...",
+          "meeting_datetime": "2026-05-10T14:00:00Z", "specialty": "...",
+          "notes": "..." }
+
+  POST /api-reports
+  Body: { "user_id": "...", "week": "2026-W19", "leads_added": 50,
+          "emails_sent": 200, "replies": 15, "appointments": 5 }
+
+  POST /api-weekly-report
+  Body: {} (sends automated reports to all active clients)
+
+  POST /send-admin-notification
+  Body: { "event_type": "new_signup|new_appointment|new_lead",
+          "data": { ... } }
+
+===============================================================================
+10. TROUBLESHOOTING
+===============================================================================
+
+Q: Dashboard shows demo data instead of real data
+A: User is not authenticated. Check login.html → Supabase Auth session.
+
+Q: CSV upload shows "0 leads imported"
+A: Two possible causes:
+   1. CSV has commas inside fields — clean the CSV first
+   2. Supabase RLS blocks insert — use SQL editor for bulk imports
+
+Q: Edge function returns 401
+A: Check x-api-key header matches BROKER_API_KEY env var in Supabase.
+
+Q: Emails not sending
+A: Check RESEND_API_KEY is set in Supabase Edge Function Secrets.
+   Also verify your sending domain is configured in Resend.
+
+Q: Vercel deployment not updating
+A: Push to main branch on GitHub. Vercel auto-deploys from main.
+   Check Vercel dashboard for build errors.
+
+===============================================================================
+                         END OF BUSINESS GUIDE
+===============================================================================

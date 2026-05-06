@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pricing — BrokerPipeline.ai</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{background:#0A0A0A;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
+        .glow-blue{box-shadow:0 0 40px rgba(37,99,235,0.15),0 0 80px rgba(37,99,235,0.05)}
+        .faq-answer{max-height:0;overflow:hidden;transition:max-height .3s ease}
+        .faq-answer.open{max-height:400px}
+    </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+function Icon({ name, size = 18, color = 'currentColor', className = '' }) {
+    const ref = useRef(null);
+    useEffect(() => {
+        if (!ref.current || !lucide?.icons?.[name]) return;
+        ref.current.innerHTML = '';
+        const svg = lucide.createElement(lucide.icons[name]);
+        svg.setAttribute('width', size);
+        svg.setAttribute('height', size);
+        svg.setAttribute('stroke', color);
+        svg.style.display = 'block';
+        ref.current.appendChild(svg);
+    }, [name, size, color]);
+    return <span ref={ref} className={`inline-flex items-center ${className}`} />;
+}
+
+const PLANS = [
+    {
+        name: 'Starter',
+        price: '1,497',
+        desc: 'Perfect for solo agents ready to automate lead generation.',
+        features: [
+            '200 qualified leads per month',
+            '5-10 booked appointments',
+            '3 email sequences',
+            'Basic voice agent',
+            'Weekly performance reports',
+            'Dedicated onboarding call',
+            'CRM integration',
+        ],
+        cta: 'Get Started',
+        popular: false,
+        stripe: '#',
+    },
+    {
+        name: 'Growth',
+        price: '3,497',
+        desc: 'For growing agencies that want consistent, high-quality appointments.',
+        features: [
+            '500 qualified leads per month',
+            '15-25 booked appointments',
+            '5 email sequences',
+            'Advanced voice agent with custom scripts',
+            'Priority support',
+            'A/B testing on outreach',
+            'Advanced analytics dashboard',
+            'Calendly integration',
+            'ROI tracking & reports',
+        ],
+        cta: 'Start Growing',
+        popular: true,
+        stripe: '#',
+    },
+    {
+        name: 'Scale',
+        price: '6,997',
+        desc: 'Enterprise-grade pipeline for agencies booking 30+ appointments monthly.',
+        features: [
+            '1,000+ qualified leads per month',
+            '30-50 booked appointments',
+            'Unlimited email sequences',
+            'Premium voice agent with AI learning',
+            'Dedicated account manager',
+            'Custom ICP research',
+            'Multi-channel outreach (email + voice + LinkedIn)',
+            'White-label reporting',
+            'API access for custom integrations',
+            'Priority feature requests',
+        ],
+        cta: 'Scale Now',
+        popular: false,
+        stripe: '#',
+    },
+];
+
+const FAQS = [
+    {
+        q: 'How quickly will I see results?',
+        a: 'Most clients see their first booked appointments within 2-3 weeks of launch. We spend the first week on setup, ICP research, and email warm-up, then campaigns go live in week 2. By week 3, qualified appointments start flowing into your calendar.',
+    },
+    {
+        q: 'What if I don\'t get any appointments?',
+        a: 'We offer a 30-day money-back guarantee. If we don\'t book a single qualified appointment in your first 30 days, you get a full refund — no questions asked. We\'re that confident in our system.',
+    },
+    {
+        q: 'Do I need to provide my own leads?',
+        a: 'No. We handle everything — from ICP research to lead sourcing via Apollo.io, email outreach via Instantly.ai, and follow-up calls via our AI voice agent. You just show up to the booked appointments.',
+    },
+    {
+        q: 'Can I upgrade or downgrade my plan?',
+        a: 'Absolutely. You can change your plan at any time. Upgrades take effect immediately, and downgrades apply at the start of your next billing cycle. No lock-in contracts.',
+    },
+];
+
+function PricingPage() {
+    const [openFaq, setOpenFaq] = useState(null);
+
+    return (
+        <div className="min-h-screen">
+            {/* Urgency Banner */}
+            <div className="bg-amber-500/10 border-b border-amber-500/20 py-2.5 text-center">
+                <span className="text-amber-400 text-sm font-medium">
+                    <Icon name="Zap" size={14} className="mr-1.5 inline-flex" color="#F59E0B" />
+                    Limited: Only 3 spots available this month — lock in your price before it increases
+                </span>
+            </div>
+
+            {/* Navbar */}
+            <nav className="border-b border-white/5" style={{background:'rgba(10,10,10,0.9)',backdropFilter:'blur(12px)'}}>
+                <div className="max-w-6xl mx-auto flex items-center justify-between px-6 py-4">
+                    <a href="index.html" className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center">
+                            <Icon name="Workflow" size={16} color="#fff" />
+                        </div>
+                        <span className="font-bold text-lg">BrokerPipeline<span className="text-blue-500">.ai</span></span>
+                    </a>
+                    <div className="flex items-center gap-6">
+                        <a href="index.html" className="text-sm text-gray-400 hover:text-white transition">Home</a>
+                        <a href="login.html"
+                           className="px-4 py-2 rounded-full bg-blue-600 text-white text-sm font-medium hover:bg-blue-500 transition">
+                            Sign In
+                        </a>
+                    </div>
+                </div>
+            </nav>
+
+            {/* Header */}
+            <div className="text-center pt-16 pb-12 px-6">
+                <h1 className="text-4xl md:text-5xl font-bold mb-4">
+                    Simple, Transparent <span className="text-blue-500">Pricing</span>
+                </h1>
+                <p className="text-gray-400 text-lg max-w-xl mx-auto">
+                    Choose the plan that fits your agency. All plans include AI-powered outreach, voice agents, and a 30-day money-back guarantee.
+                </p>
+            </div>
+
+            {/* Pricing Cards */}
+            <div className="max-w-6xl mx-auto px-6 pb-20">
+                <div className="grid md:grid-cols-3 gap-6">
+                    {PLANS.map((plan) => (
+                        <div
+                            key={plan.name}
+                            className={`rounded-2xl p-6 flex flex-col relative ${
+                                plan.popular ? 'glow-blue border-2 border-blue-500/40' : 'border border-white/5'
+                            }`}
+                            style={{background:'#111'}}
+                        >
+                            {plan.popular && (
+                                <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                                    <span className="bg-blue-600 text-white text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">
+                                        Popular
+                                    </span>
+                                </div>
+                            )}
+
+                            <div className="mb-6">
+                                <h3 className="text-xl font-bold mb-1">{plan.name}</h3>
+                                <p className="text-gray-500 text-sm mb-4">{plan.desc}</p>
+                                <div className="flex items-baseline gap-1">
+                                    <span className="text-4xl font-bold">${plan.price}</span>
+                                    <span className="text-gray-500 text-sm">/month</span>
+                                </div>
+                            </div>
+
+                            <div className="flex-1 mb-6">
+                                <ul className="space-y-3">
+                                    {plan.features.map((f, i) => (
+                                        <li key={i} className="flex items-start gap-2.5 text-sm text-gray-300">
+                                            <Icon name="Check" size={16} color="#22C55E" className="mt-0.5 flex-shrink-0" />
+                                            {f}
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+
+                            <div className="space-y-3">
+                                <a
+                                    href={plan.stripe}
+                                    className={`block w-full text-center py-3 rounded-full font-medium text-sm transition ${
+                                        plan.popular
+                                            ? 'bg-blue-600 text-white hover:bg-blue-500'
+                                            : 'bg-white/5 text-white hover:bg-white/10 border border-white/10'
+                                    }`}
+                                >
+                                    {plan.cta}
+                                </a>
+                                <div className="text-center text-xs text-gray-600 space-y-0.5">
+                                    <p>30-day money-back guarantee</p>
+                                    <p>Setup within 48 hours</p>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* FAQ */}
+            <div className="max-w-2xl mx-auto px-6 pb-24">
+                <h2 className="text-2xl font-bold text-center mb-8">Frequently Asked Questions</h2>
+                <div className="space-y-3">
+                    {FAQS.map((faq, i) => (
+                        <div key={i} className="rounded-xl border border-white/5" style={{background:'#111'}}>
+                            <button
+                                className="w-full flex items-center justify-between p-4 text-left"
+                                onClick={() => setOpenFaq(openFaq === i ? null : i)}
+                            >
+                                <span className="font-medium text-sm">{faq.q}</span>
+                                <Icon
+                                    name="ChevronDown"
+                                    size={16}
+                                    className={`transition-transform ${openFaq === i ? 'rotate-180' : ''}`}
+                                    color="#6B7280"
+                                />
+                            </button>
+                            <div className={`faq-answer ${openFaq === i ? 'open' : ''}`}>
+                                <p className="px-4 pb-4 text-sm text-gray-400 leading-relaxed">{faq.a}</p>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* CTA */}
+            <div className="text-center pb-20 px-6">
+                <div className="rounded-2xl border border-white/5 p-10 max-w-2xl mx-auto" style={{background:'#111'}}>
+                    <h2 className="text-2xl font-bold mb-3">Ready to fill your calendar?</h2>
+                    <p className="text-gray-400 mb-6">Book a free strategy call and we'll show you exactly how many appointments we can book for your agency.</p>
+                    <a href="login.html"
+                       className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-blue-600 text-white font-medium hover:bg-blue-500 transition">
+                        <Icon name="Calendar" size={16} />
+                        Book Strategy Call
+                    </a>
+                </div>
+            </div>
+
+            {/* Footer */}
+            <footer className="border-t border-white/5 py-8 text-center text-sm text-gray-600">
+                &copy; 2026 BrokerPipeline.ai — All rights reserved.
+            </footer>
+        </div>
+    );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<PricingPage />);
+</script>
+</body>
+</html>
