@@ -335,6 +335,42 @@ function AddLeadsPage({ clients }) {
     const [result, setResult] = useState(null);
 
     const SPECIALTIES = ['Commercial','Life','Health','Auto','Home','Medicare','Cyber','Agriculture','Professional'];
+    const [showApollo, setShowApollo] = useState(false);
+    const [apolloCount, setApolloCount] = useState(25);
+    const [apolloState, setApolloState] = useState('All States');
+    const [apolloSpec, setApolloSpec] = useState('All');
+    const [apolloLoading, setApolloLoading] = useState(false);
+    const [apolloResult, setApolloResult] = useState(null);
+
+    const US_STATES = ['All States','Alabama','Alaska','Arizona','Arkansas','California','Colorado','Connecticut','Delaware','Florida','Georgia','Hawaii','Idaho','Illinois','Indiana','Iowa','Kansas','Kentucky','Louisiana','Maine','Maryland','Massachusetts','Michigan','Minnesota','Mississippi','Missouri','Montana','Nebraska','Nevada','New Hampshire','New Jersey','New Mexico','New York','North Carolina','North Dakota','Ohio','Oklahoma','Oregon','Pennsylvania','Rhode Island','South Carolina','South Dakota','Tennessee','Texas','Utah','Vermont','Virginia','Washington','West Virginia','Wisconsin','Wyoming'];
+
+    const handleApolloImport = async () => {
+        if (!selectedClient) return;
+        setApolloLoading(true);
+        setApolloResult(null);
+        try {
+            const body = {
+                client_id: selectedClient,
+                per_page: Math.min(apolloCount, 100),
+                page: 1,
+                locations: apolloState === 'All States' ? ['United States'] : [apolloState + ', United States'],
+            };
+            if (apolloSpec !== 'All') {
+                body.job_titles = [`${apolloSpec} Insurance Agent`, `${apolloSpec} Insurance Broker`];
+            }
+            const res = await fetch('https://glokxezbcrelrndcbhhs.supabase.co/functions/v1/api-apollo-search', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'x-api-key': 'bp_live_a1b2c3d4e5f6g7h8i9j0k1l2' },
+                body: JSON.stringify(body),
+            });
+            const data = await res.json();
+            if (data.error) throw new Error(data.error);
+            setApolloResult({ success: true, message: `${data.leads_imported} leads imported successfully` });
+        } catch (err) {
+            setApolloResult({ success: false, message: err.message });
+        }
+        setApolloLoading(false);
+    };
 
     const addRow = () => setRows(prev => [...prev, { name: '', company: '', email: '', phone: '', score: '7', specialty: 'Commercial' }]);
 
@@ -432,7 +468,7 @@ function AddLeadsPage({ clients }) {
             </div>
 
             {/* Mode toggle */}
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
                 {[{ id: 'manual', label: 'Add Manually', icon: 'PenLine' }, { id: 'csv', label: 'Paste CSV', icon: 'FileText' }].map(m => (
                     <button
                         key={m.id}
@@ -448,7 +484,73 @@ function AddLeadsPage({ clients }) {
                         {m.label}
                     </button>
                 ))}
+                <button
+                    onClick={() => { setShowApollo(true); setApolloResult(null); }}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all"
+                    style={{ background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.3)', color: '#A78BFA' }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(99,102,241,0.2)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'rgba(99,102,241,0.12)'}
+                >
+                    <Icon name="Globe" size={15} color="#A78BFA" />
+                    Import from Apollo
+                </button>
             </div>
+
+            {/* Apollo Import Modal */}
+            {showApollo && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setShowApollo(false)}>
+                    <div className="absolute inset-0 bg-black/70" />
+                    <div className="relative w-full max-w-md rounded-2xl p-6 space-y-5" style={{ background: '#111', border: '1px solid #1F1F1F' }}
+                        onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between">
+                            <h3 className="text-lg font-semibold">Import from Apollo</h3>
+                            <button onClick={() => setShowApollo(false)} className="text-gray-500 hover:text-white"><Icon name="X" size={20} /></button>
+                        </div>
+                        <div>
+                            <label className="block text-xs text-gray-400 mb-1.5">Number of leads</label>
+                            <input type="number" min={1} max={100} value={apolloCount} onChange={e => setApolloCount(parseInt(e.target.value) || 25)}
+                                className="w-full rounded-lg px-4 py-3 text-sm" style={inputStyle} onFocus={focusBorder} onBlur={blurBorder} />
+                        </div>
+                        <div>
+                            <label className="block text-xs text-gray-400 mb-1.5">US State</label>
+                            <select value={apolloState} onChange={e => setApolloState(e.target.value)}
+                                className="w-full rounded-lg px-4 py-3 text-sm" style={inputStyle} onFocus={focusBorder} onBlur={blurBorder}>
+                                {US_STATES.map(s => <option key={s} value={s} style={{ background: '#111' }}>{s}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-xs text-gray-400 mb-1.5">Specialty</label>
+                            <select value={apolloSpec} onChange={e => setApolloSpec(e.target.value)}
+                                className="w-full rounded-lg px-4 py-3 text-sm" style={inputStyle} onFocus={focusBorder} onBlur={blurBorder}>
+                                {['All','Life','Commercial','Health','P&C'].map(s => <option key={s} value={s} style={{ background: '#111' }}>{s}</option>)}
+                            </select>
+                        </div>
+                        {apolloResult && (
+                            <div className="rounded-xl px-4 py-3 text-sm"
+                                style={{
+                                    background: apolloResult.success ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)',
+                                    border: `1px solid ${apolloResult.success ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)'}`,
+                                    color: apolloResult.success ? '#22C55E' : '#EF4444',
+                                }}>
+                                {apolloResult.message}
+                            </div>
+                        )}
+                        <button
+                            onClick={handleApolloImport}
+                            disabled={!selectedClient || apolloLoading}
+                            className="w-full flex items-center justify-center gap-2 px-6 py-3 rounded-xl text-sm font-medium text-white transition-all"
+                            style={{
+                                background: selectedClient && !apolloLoading ? '#6366F1' : '#1A1A1A',
+                                opacity: selectedClient && !apolloLoading ? 1 : 0.5,
+                                cursor: selectedClient && !apolloLoading ? 'pointer' : 'not-allowed',
+                            }}>
+                            <Icon name={apolloLoading ? 'Loader2' : 'Globe'} size={16} color="#fff" />
+                            {apolloLoading ? 'Importing…' : 'Import Now'}
+                        </button>
+                        {!selectedClient && <p className="text-xs text-yellow-500 text-center">Select a client above first</p>}
+                    </div>
+                </div>
+            )}
 
             {/* CSV mode */}
             {mode === 'csv' && (

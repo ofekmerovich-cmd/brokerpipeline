@@ -75,6 +75,7 @@
         input:focus, textarea:focus, select:focus { outline: none; }
         /* Table row hover */
         .tbl-row:hover { background: rgba(255,255,255,0.025); }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
@@ -477,9 +478,26 @@ function OverviewPage({ leads, reports, daily }) {
 }
 
 // ── Leads page ────────────────────────────────────────────────────────────────
-function LeadsPage({ leads }) {
+function LeadsPage({ leads, setLeads, user }) {
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('All');
+    const [refreshing, setRefreshing] = useState(false);
+    const [lastUpdated, setLastUpdated] = useState(null);
+
+    const refreshLeads = async () => {
+        if (refreshing) return;
+        setRefreshing(true);
+        try {
+            if (sb && user?.id) {
+                const { data } = await sb.from('leads').select('*')
+                    .eq('user_id', user.id)
+                    .order('date_added', { ascending: false });
+                if (data?.length) setLeads(data);
+            }
+        } catch (err) {}
+        setLastUpdated(new Date());
+        setRefreshing(false);
+    };
 
     const filtered = leads.filter(l => {
         const q = search.toLowerCase();
@@ -499,16 +517,36 @@ function LeadsPage({ leads }) {
                     <h1 className="text-lg font-semibold">My Leads</h1>
                     <p className="text-sm text-gray-500 mt-0.5">{leads.length} total this month</p>
                 </div>
-                <button
-                    onClick={() => downloadCSV(filtered, 'leads.csv')}
-                    className="flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm text-gray-300 hover:text-white transition-colors"
-                    style={{ border: '1px solid #1A1A1A' }}
-                    onMouseEnter={e => e.currentTarget.style.borderColor = '#333'}
-                    onMouseLeave={e => e.currentTarget.style.borderColor = '#1A1A1A'}
-                >
-                    <Icon name="Download" size={15} />
-                    Export CSV
-                </button>
+                <div className="flex items-center gap-3">
+                    {lastUpdated && (
+                        <span className="text-xs text-gray-500">
+                            Last updated: {lastUpdated.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                        </span>
+                    )}
+                    <button
+                        onClick={refreshLeads}
+                        disabled={refreshing}
+                        className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm text-gray-300 transition-colors"
+                        style={{ border: '1px solid #1F1F1F', opacity: refreshing ? 0.5 : 1 }}
+                        onMouseEnter={e => { if (!refreshing) e.currentTarget.style.borderColor = '#333'; }}
+                        onMouseLeave={e => e.currentTarget.style.borderColor = '#1F1F1F'}
+                    >
+                        <span style={{ display: 'inline-flex', animation: refreshing ? 'spin 1s linear infinite' : 'none' }}>
+                            <Icon name="RefreshCw" size={15} />
+                        </span>
+                        Refresh
+                    </button>
+                    <button
+                        onClick={() => downloadCSV(filtered, 'leads.csv')}
+                        className="flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm text-gray-300 hover:text-white transition-colors"
+                        style={{ border: '1px solid #1A1A1A' }}
+                        onMouseEnter={e => e.currentTarget.style.borderColor = '#333'}
+                        onMouseLeave={e => e.currentTarget.style.borderColor = '#1A1A1A'}
+                    >
+                        <Icon name="Download" size={15} />
+                        Export CSV
+                    </button>
+                </div>
             </div>
 
             {/* Filters */}
@@ -1392,7 +1430,7 @@ function App() {
 
     const PAGES = {
         overview:     <OverviewPage     leads={leads}  reports={reports} daily={daily} />,
-        leads:        <LeadsPage        leads={leads} />,
+        leads:        <LeadsPage        leads={leads} setLeads={setLeads} user={user} />,
         appointments: <AppointmentsPage appointments={appts} />,
         reports:      <ReportsPage      reports={reports} appointments={appts} />,
         roi:          <ROIPage          appointments={appts} />,
