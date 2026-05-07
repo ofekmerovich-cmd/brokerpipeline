@@ -9,6 +9,7 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         *{margin:0;padding:0;box-sizing:border-box}
         body{background:#0A0A0A;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
@@ -26,7 +27,7 @@
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const { useRef, useEffect } = React;
+const { useRef, useEffect, useState } = React;
 
 function Icon({ name, size = 18, color = 'currentColor', className = '' }) {
     const ref = useRef(null);
@@ -43,7 +44,42 @@ function Icon({ name, size = 18, color = 'currentColor', className = '' }) {
     return <span ref={ref} className={`inline-flex items-center ${className}`} />;
 }
 
+// Try to log subscription to Supabase
+function logSubscription(subscriptionId, planName) {
+    try {
+        var sb = supabase.createClient(
+            'https://glokxezbcrelrndcbhhs.supabase.co',
+            'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdsb2t4ZXpiY3JlbHJuZGNiaGhzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYzMDc2MTUsImV4cCI6MjA2MTg4MzYxNX0.a5oR_2YJkUPOFNVv40cXuFMBb7VGmP8XGN6D_DBLuRs'
+        );
+        sb.from('subscriptions').insert({
+            subscription_id: subscriptionId,
+            plan: planName,
+            created_at: new Date().toISOString(),
+        }).then(function() {
+            console.log('Subscription logged');
+        });
+    } catch (e) {
+        console.warn('Could not log subscription to Supabase:', e);
+    }
+}
+
 function SuccessPage() {
+    var params = new URLSearchParams(window.location.search);
+    var subscriptionId = params.get('subscription_id') || '';
+    var planName = params.get('plan') || '';
+
+    useEffect(function() {
+        if (subscriptionId) {
+            logSubscription(subscriptionId, planName);
+        }
+    }, []);
+
+    var NEXT_STEPS = [
+        { icon: 'Mail', text: 'Check your email for dashboard login credentials' },
+        { icon: 'Calendar', text: 'Your onboarding call will be scheduled within 24 hours' },
+        { icon: 'Rocket', text: 'Pipeline setup begins — leads start flowing in 48 hours' },
+    ];
+
     return (
         <div className="min-h-screen flex items-center justify-center px-6 relative overflow-hidden">
             {/* Background glow */}
@@ -55,7 +91,7 @@ function SuccessPage() {
                 }}
             />
 
-            <div className="relative z-10 text-center max-w-md">
+            <div className="relative z-10 text-center max-w-lg">
                 {/* Green checkmark */}
                 <div className="check-anim mb-8 inline-flex">
                     <div
@@ -68,14 +104,48 @@ function SuccessPage() {
 
                 {/* Title */}
                 <h1 className="fade-up fade-up-1 text-3xl md:text-4xl font-bold mb-4">
-                    You're all set!
+                    Welcome to BrokerPipeline!
                 </h1>
+
+                {/* Plan badge */}
+                {planName && (
+                    <div className="fade-up fade-up-1 mb-6">
+                        <span className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-medium bg-blue-600/20 text-blue-400 border border-blue-500/30">
+                            <Icon name="Zap" size={14} color="#60A5FA" />
+                            {planName} Plan
+                        </span>
+                    </div>
+                )}
 
                 {/* Message */}
                 <p className="fade-up fade-up-2 text-gray-400 text-lg leading-relaxed mb-8">
-                    Welcome to BrokerPipeline.ai.<br />
-                    Your account is being set up and you'll hear from us within 24 hours.
+                    Your subscription is confirmed. We're setting everything up for you right now.
                 </p>
+
+                {/* Subscription ID */}
+                {subscriptionId && (
+                    <div className="fade-up fade-up-2 mb-8 px-4 py-3 rounded-xl border border-white/5 bg-white/[0.02]">
+                        <p className="text-xs text-gray-500 mb-1">Subscription ID</p>
+                        <p className="text-sm text-gray-300 font-mono">{subscriptionId}</p>
+                    </div>
+                )}
+
+                {/* Next steps */}
+                <div className="fade-up fade-up-2 mb-10 text-left">
+                    <p className="text-sm font-semibold text-white mb-4 text-center">What happens next:</p>
+                    <div className="space-y-3">
+                        {NEXT_STEPS.map(function(step, i) {
+                            return (
+                                <div key={i} className="flex items-start gap-3 px-4 py-3 rounded-xl border border-white/5 bg-white/[0.02]">
+                                    <div className="mt-0.5 flex-shrink-0 w-8 h-8 rounded-lg bg-blue-600/15 flex items-center justify-center">
+                                        <Icon name={step.icon} size={16} color="#60A5FA" />
+                                    </div>
+                                    <p className="text-sm text-gray-300 leading-relaxed">{step.text}</p>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
 
                 {/* CTA Button */}
                 <div className="fade-up fade-up-3">

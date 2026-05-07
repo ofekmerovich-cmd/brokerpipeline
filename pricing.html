@@ -9,6 +9,7 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://www.paypal.com/sdk/js?client-id=BAAJ-JNRMh4dCfZ3_vPU5Zqj-vP_DDZBo6uZlVb8hhmQUYG74LJStBQY7kWAsvp6A4R4MN8PlYLIrGsbn4&vault=true&intent=subscription" data-sdk-integration-source="button-factory"></script>
     <style>
         *{margin:0;padding:0;box-sizing:border-box}
         body{background:#0A0A0A;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
@@ -53,7 +54,7 @@ const PLANS = [
         ],
         cta: 'Get Started',
         popular: false,
-        stripe: '#',
+        planId: 'P-0SM6782952597135PNH6EVSI',
     },
     {
         name: 'Growth',
@@ -72,10 +73,10 @@ const PLANS = [
         ],
         cta: 'Start Growing',
         popular: true,
-        stripe: '#',
+        planId: 'P-2NL30977D56624512NH6EWZI',
     },
     {
-        name: 'Scale',
+        name: 'Elite',
         price: '6,997',
         desc: 'Enterprise-grade pipeline for agencies booking 30+ appointments monthly.',
         features: [
@@ -92,7 +93,7 @@ const PLANS = [
         ],
         cta: 'Scale Now',
         popular: false,
-        stripe: '#',
+        planId: 'P-30A14565R8285861LNH6EXJA',
     },
 ];
 
@@ -114,6 +115,42 @@ const FAQS = [
         a: 'Absolutely. You can change your plan at any time. Upgrades take effect immediately, and downgrades apply at the start of your next billing cycle. No lock-in contracts.',
     },
 ];
+
+function PayPalButton({ planId, planName }) {
+    const containerRef = useRef(null);
+    const renderedRef = useRef(false);
+
+    useEffect(() => {
+        if (!containerRef.current || renderedRef.current) return;
+        if (typeof paypal === 'undefined') {
+            console.warn('PayPal SDK not loaded yet');
+            return;
+        }
+        renderedRef.current = true;
+        paypal.Buttons({
+            style: {
+                shape: 'pill',
+                color: 'white',
+                layout: 'vertical',
+                label: 'subscribe',
+            },
+            createSubscription: function(data, actions) {
+                return actions.subscription.create({
+                    plan_id: planId,
+                });
+            },
+            onApprove: function(data) {
+                window.location.href = 'success.html?subscription_id=' + data.subscriptionID + '&plan=' + encodeURIComponent(planName);
+            },
+            onError: function(err) {
+                console.error('PayPal error:', err);
+                alert('Something went wrong with PayPal. Please try again.');
+            }
+        }).render(containerRef.current);
+    }, [planId, planName]);
+
+    return <div ref={containerRef} style={{ minHeight: '55px' }} />;
+}
 
 function PricingPage() {
     const [openFaq, setOpenFaq] = useState(null);
@@ -197,16 +234,7 @@ function PricingPage() {
                             </div>
 
                             <div className="space-y-3">
-                                <a
-                                    href={plan.stripe}
-                                    className={`block w-full text-center py-3 rounded-full font-medium text-sm transition ${
-                                        plan.popular
-                                            ? 'bg-blue-600 text-white hover:bg-blue-500'
-                                            : 'bg-white/5 text-white hover:bg-white/10 border border-white/10'
-                                    }`}
-                                >
-                                    {plan.cta}
-                                </a>
+                                <PayPalButton planId={plan.planId} planName={plan.name} />
                                 <div className="text-center text-xs text-gray-600 space-y-0.5">
                                     <p>30-day money-back guarantee</p>
                                     <p>Setup within 48 hours</p>

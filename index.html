@@ -640,7 +640,7 @@
             const plans = [
                 { name: 'Starter', price: '$1,497', features: '20 leads, email outreach only', popular: false },
                 { name: 'Growth', price: '$3,497', features: '60 leads, email + voice agent + booking', popular: true },
-                { name: 'Scale', price: '$6,997', features: '150+ leads, full multichannel, inbound 24/7', popular: false },
+                { name: 'Elite', price: '$6,997', features: '150+ leads, full multichannel, inbound 24/7', popular: false },
             ];
             return (
                 <section id="pricing" className="py-24 px-6">
@@ -663,7 +663,7 @@
                                         <span className="text-gray-500">/mo</span>
                                     </div>
                                     <p className="text-gray-400 mb-8">{plan.features}</p>
-                                    <a href={CALENDLY_URL} target="_blank" className={`block text-center py-3 rounded-full font-medium transition-colors ${plan.popular ? 'bg-blue-500 hover:bg-blue-600 text-white' : 'border border-gray-700 hover:border-gray-500 text-white'}`}>
+                                    <a href="pricing.html" className={`block text-center py-3 rounded-full font-medium transition-colors ${plan.popular ? 'bg-blue-500 hover:bg-blue-600 text-white' : 'border border-gray-700 hover:border-gray-500 text-white'}`}>
                                         Get Started
                                     </a>
                                 </div>
