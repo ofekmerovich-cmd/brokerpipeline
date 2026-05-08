@@ -42,33 +42,61 @@ Deno.serve(async (req) => {
       return jsonError(error.message, 500);
     }
 
-    // Send email notification to client
+    // Send email notification to client via Resend
     try {
+      const resendKey = Deno.env.get("RESEND_API_KEY");
       const { data: profile } = await sb
         .from("client_onboarding")
         .select("full_name, email")
         .eq("user_id", client_id)
         .single();
 
-      if (profile?.email) {
+      if (profile?.email && resendKey) {
         const dt = new Date(meeting_datetime);
         const formatted = dt.toLocaleString("en-US", {
           weekday: "long", month: "long", day: "numeric",
           hour: "numeric", minute: "2-digit", hour12: true,
         });
 
-        await sb.functions.invoke("send-notification", {
-          body: {
-            to: profile.email,
-            subject: `New Appointment Booked — ${prospect_name}`,
-            html: `
-              <h2>New appointment booked!</h2>
-              <p><strong>${prospect_name}</strong> has been scheduled for <strong>${formatted}</strong>.</p>
-              ${specialty ? `<p>Specialty: ${specialty}</p>` : ""}
-              ${notes ? `<p>Notes: ${notes}</p>` : ""}
-              <p><a href="https://brokerpipeline.ai/dashboard.html">View in Dashboard</a></p>
-            `,
+        const emailHtml = `
+          <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:560px;margin:0 auto;padding:32px;background:#ffffff;border-radius:12px;">
+            <div style="margin-bottom:24px;">
+              <span style="font-size:18px;font-weight:700;color:#111;">BrokerPipeline<span style="color:#2563EB;">.ai</span></span>
+            </div>
+            <h2 style="font-size:22px;color:#111;margin:0 0 16px;">New Appointment Booked! 🎉</h2>
+            <p style="font-size:15px;color:#333;line-height:1.6;margin:0 0 8px;">
+              Hey ${profile.full_name || "there"},
+            </p>
+            <p style="font-size:15px;color:#333;line-height:1.6;margin:0 0 20px;">
+              Great news — a new appointment has been booked for you.
+            </p>
+            <div style="background:#f8f9fa;border-radius:8px;padding:16px 20px;margin-bottom:20px;">
+              <p style="margin:0 0 8px;font-size:15px;"><strong>Prospect:</strong> ${prospect_name}</p>
+              <p style="margin:0 0 8px;font-size:15px;"><strong>Date & Time:</strong> ${formatted}</p>
+              ${specialty ? `<p style="margin:0 0 8px;font-size:15px;"><strong>Specialty:</strong> ${specialty}</p>` : ""}
+              ${notes ? `<p style="margin:0;font-size:15px;"><strong>Notes:</strong> ${notes}</p>` : ""}
+            </div>
+            <a href="https://brokerpipeline.vercel.app/dashboard.html" style="display:inline-block;background-color:#2563EB;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;padding:12px 28px;border-radius:50px;">
+              View in Dashboard →
+            </a>
+            <p style="font-size:13px;color:#999;margin-top:24px;">
+              Aria from BrokerPipeline.ai
+            </p>
+          </div>
+        `;
+
+        await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${resendKey}`,
+            "Content-Type": "application/json",
           },
+          body: JSON.stringify({
+            from: "BrokerPipeline <onboarding@resend.dev>",
+            to: [profile.email],
+            subject: `New Appointment Booked — ${prospect_name}`,
+            html: emailHtml,
+          }),
         });
       }
     } catch (_notifErr) {
