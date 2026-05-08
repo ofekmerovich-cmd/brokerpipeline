@@ -1,0 +1,336 @@
+===============================================================================
+         BROKERPIPELINE.AI — MAKE.COM SETUP GUIDE
+         Complete step-by-step instructions for both automation scenarios
+===============================================================================
+
+
+PREREQUISITES
+───────────────────────────────────────────
+
+Before you begin, make sure you have accounts and API keys for:
+
+  1. Make.com        — Free plan works for testing; Pro plan for production
+  2. Supabase        — Project: glokxezbcrelrndcbhhs (already configured)
+  3. PayPal Business  — Developer account with webhook access
+  4. Resend           — API key: configured in Supabase Edge Functions
+  5. Instantly.ai     — Email outreach platform with API access
+  6. Retell AI        — Voice agent platform (Aria agent configured)
+  7. Google Drive     — For storing Apollo CSV lead exports
+  8. Apollo.io        — Lead sourcing (export CSVs to Google Drive)
+
+
+===============================================================================
+SCENARIO 1: NEW CLIENT ONBOARDING
+Blueprint file: make_scenario_1_new_client.json
+===============================================================================
+
+This scenario fires when someone subscribes via PayPal and automates the
+entire onboarding flow: database entry, welcome email, campaign setup,
+admin notification, and first Aria call.
+
+
+STEP 1 — CREATE THE SCENARIO IN MAKE
+───────────────────────────────────────────
+
+  1. Log into Make.com
+  2. Click "Create a new scenario"
+  3. Name it: "BrokerPipeline — New Client Onboarding"
+
+
+STEP 2 — ADD PAYPAL WEBHOOK TRIGGER
+───────────────────────────────────────────
+
+  1. Add module: Webhooks → Custom Webhook
+  2. Click "Add" to create a new webhook — name it "PayPal Subscription"
+  3. Copy the webhook URL that Make generates
+  4. Go to PayPal Developer Dashboard → My Apps & Credentials
+  5. Select your app → Webhooks → Add Webhook
+  6. Paste the Make webhook URL
+  7. Subscribe to event: BILLING.SUBSCRIPTION.CREATED
+  8. Save — PayPal will send a test event
+  9. Back in Make, click "Redetermine data structure" to map the payload
+
+  PayPal Plan IDs for reference:
+    Starter ($1,497/mo):  P-0SM6782952597135PNH6EVSI
+    Growth ($3,497/mo):   P-2NL30977D56624512NH6EWZI
+    Scale ($6,997/mo):    P-30A14565R8285861LNH6EXJA
+
+
+STEP 3 — ADD SET VARIABLE MODULE
+───────────────────────────────────────────
+
+  1. Add module: Tools → Set Variable
+  2. Variable name: clientData
+  3. Map the fields from the PayPal webhook:
+     - email          → resource.subscriber.email_address
+     - first_name     → resource.subscriber.name.given_name
+     - last_name      → resource.subscriber.name.surname
+     - subscription_id → resource.id
+     - plan_id        → resource.plan_id
+  4. Add a formula for plan_name:
+     if(plan_id = "P-0SM..."; "Starter"; if(plan_id = "P-2NL..."; "Growth"; "Scale"))
+
+
+STEP 4 — ADD SUPABASE INSERT
+───────────────────────────────────────────
+
+  1. Add module: Supabase → Insert a Row
+  2. Connect your Supabase account (use service_role key)
+     - URL: https://glokxezbcrelrndcbhhs.supabase.co
+     - API Key: your service_role key (not the anon key)
+  3. Table: client_onboarding
+  4. Map fields: email, full_name, plan, status="Active",
+     subscription_id, monthly_price
+
+
+STEP 5 — ADD RESEND WELCOME EMAIL
+───────────────────────────────────────────
+
+  1. Add module: HTTP → Make a Request
+  2. URL: https://api.resend.com/emails
+  3. Method: POST
+  4. Headers:
+     - Authorization: Bearer re_Ern5Z2qT_M9FiHD8vTLD6RcnWgs3N15yD
+     - Content-Type: application/json
+  5. Body type: Raw → JSON
+  6. Use the email template from the blueprint JSON file
+  7. Test with your own email first
+
+
+STEP 6 — ADD INSTANTLY CAMPAIGN CREATION
+───────────────────────────────────────────
+
+  1. Add module: HTTP → Make a Request
+  2. URL: https://api.instantly.ai/api/v1/campaign/create
+  3. Method: POST
+  4. Body: campaign_name, daily_limit (30/60/100 based on plan)
+  5. IMPORTANT: Save the campaign_id from the response — map it back
+     to Supabase in the next module
+
+
+STEP 7 — ADD ADMIN NOTIFICATION
+───────────────────────────────────────────
+
+  1. Add module: HTTP → Make a Request (Resend)
+  2. Same pattern as Step 5 but send to admin@brokerpipeline.ai
+  3. Include: client name, email, plan, subscription ID, campaign ID
+
+
+STEP 8 — ADD RETELL ARIA CALL (OPTIONAL)
+───────────────────────────────────────────
+
+  1. Add module: HTTP → Make a Request
+  2. URL: https://api.retellai.com/v2/create-phone-call
+  3. Headers: Authorization: Bearer [your_retell_key]
+  4. Body: agent_id, customer_number, dynamic variables
+  5. NOTE: This requires the client phone number. If PayPal does not
+     provide it, add a Router before this step to skip if no phone.
+
+
+STEP 9 — ACTIVATE
+───────────────────────────────────────────
+
+  1. Turn on the scenario
+  2. Set scheduling to "Immediately" (webhook-triggered)
+  3. Test with a PayPal sandbox subscription
+  4. Check: Supabase has new row, email received, Instantly campaign exists
+
+
+
+===============================================================================
+SCENARIO 2: DAILY LEAD PIPELINE
+Blueprint file: make_scenario_2_daily_leads.json
+===============================================================================
+
+This scenario runs every morning, checks which clients are active,
+pulls their Apollo lead CSVs from Google Drive, pushes leads to
+Instantly campaigns, updates the Supabase dashboard, and sends
+an admin summary.
+
+
+STEP 1 — CREATE THE SCENARIO IN MAKE
+───────────────────────────────────────────
+
+  1. Click "Create a new scenario"
+  2. Name it: "BrokerPipeline — Daily Lead Pipeline"
+
+
+STEP 2 — ADD SCHEDULE TRIGGER
+───────────────────────────────────────────
+
+  1. Add module: Schedule → Basic Scheduler
+  2. Set to run every day
+  3. Time: 08:00
+  4. Timezone: America/New_York (EST)
+
+
+STEP 3 — ADD SUPABASE SEARCH
+───────────────────────────────────────────
+
+  1. Add module: Supabase → Search Rows
+  2. Table: client_onboarding
+  3. Filter: status = "Active" AND instantly_campaign_id is not empty
+  4. Select: user_id, full_name, email, plan, instantly_campaign_id,
+     icp_titles, icp_industries, icp_locations
+
+
+STEP 4 — ADD ITERATOR
+───────────────────────────────────────────
+
+  1. Add module: Flow Control → Iterator
+  2. Array: map to the Supabase search results
+  3. This loops through each active client
+
+
+STEP 5 — ADD GOOGLE DRIVE FILE SEARCH
+───────────────────────────────────────────
+
+  Setup Google Drive folder structure:
+    BrokerPipeline Leads/
+    ├── Mike Rodriguez/
+    │   ├── apollo-leads-2026-05-07.csv
+    │   └── apollo-leads-2026-05-06.csv
+    ├── Sarah Johnson/
+    │   └── apollo-leads-2026-05-07.csv
+    └── ...
+
+  1. Add module: Google Drive → Search for Files
+  2. Search in folder: your BrokerPipeline Leads folder ID
+  3. Query: name contains client name AND name contains "apollo"
+  4. Sort by: modified time descending
+  5. Limit: 1 (most recent file)
+
+  HOW TO GET APOLLO CSVS:
+    Option A (Manual): Export from Apollo.io search, save to Drive folder
+    Option B (Automated): Use Apollo API to search and export daily
+    Option C (Zapier bridge): Apollo → Google Drive via Zapier
+
+
+STEP 6 — ADD CSV PARSER
+───────────────────────────────────────────
+
+  1. Add module: Google Drive → Download File
+  2. Add module: CSV → Parse CSV
+  3. Map columns: first_name, last_name, email, company, title,
+     linkedin_url, city, state, company_size, industry
+  4. Enable "First row contains headers"
+
+
+STEP 7 — ADD FILTER
+───────────────────────────────────────────
+
+  1. Add module: Flow Control → Filter
+  2. Condition: email exists (not empty)
+  3. This skips rows with missing email addresses
+
+
+STEP 8 — ADD INSTANTLY LEAD PUSH
+───────────────────────────────────────────
+
+  1. Add module: HTTP → Make a Request
+  2. URL: https://api.instantly.ai/api/v1/lead/add
+  3. Method: POST
+  4. Body:
+     - api_key: your Instantly API key
+     - campaign_id: from the iterator (client's campaign)
+     - skip_if_in_workspace: true (avoids duplicates)
+     - leads array with email, first_name, last_name, company,
+       personalization string, custom variables
+
+
+STEP 9 — ADD SUPABASE LEAD INSERT
+───────────────────────────────────────────
+
+  1. Add module: HTTP → Make a Request
+  2. URL: https://glokxezbcrelrndcbhhs.supabase.co/functions/v1/api-leads
+  3. Method: POST
+  4. Header: x-api-key: [your BROKER_API_KEY]
+  5. Body: client_id, name, email, company, title, source="Apollo",
+     status="New", location
+
+
+STEP 10 — ADD AGGREGATOR AND DAILY SUMMARY
+───────────────────────────────────────────
+
+  1. Add module: Tools → Numeric Aggregator (count leads per client)
+  2. Add another aggregator for total across all clients
+  3. Add module: HTTP → Make a Request (Resend)
+  4. Send daily summary email to admin@brokerpipeline.ai with:
+     - Total leads pushed today
+     - Number of active clients processed
+     - Breakdown by client
+
+
+STEP 11 — ACTIVATE
+───────────────────────────────────────────
+
+  1. Turn on the scenario
+  2. Scheduling: Every day at 08:00 EST
+  3. Run once manually to test
+  4. Check: Supabase leads table, Instantly campaigns, admin email
+
+
+
+===============================================================================
+TROUBLESHOOTING
+===============================================================================
+
+COMMON ISSUES:
+
+  "401 Unauthorized" from Supabase
+  → Make sure you are using the service_role key, not the anon key
+  → Check that BROKER_API_KEY matches what is in Edge Function secrets
+
+  "Invalid API key" from Instantly
+  → Regenerate API key in Instantly dashboard → Settings → Integrations
+  → Make sure there are no trailing spaces in the key
+
+  "No file found" in Google Drive
+  → Check folder ID is correct
+  → Verify file naming convention matches search query
+  → Make sure the Google Drive connection has access to the folder
+
+  Resend emails going to spam
+  → Add a custom domain in Resend dashboard for better deliverability
+  → Change "from" address from onboarding@resend.dev to your domain
+
+  Retell call not connecting
+  → Verify phone number format is E.164 (e.g., +12125551234)
+  → Check Retell agent is active and has available minutes
+  → Test with Retell dashboard first before automating
+
+  PayPal webhook not firing
+  → Check webhook status in PayPal Developer Dashboard
+  → Verify the webhook URL is correct (no trailing slash)
+  → Use PayPal Sandbox for testing before going live
+
+
+RATE LIMITS TO WATCH:
+
+  Instantly.ai   — 100 leads per API call, 1000/day per campaign
+  Resend         — 100 emails/day on free plan, 50k/mo on Pro
+  Retell AI      — Depends on your plan minutes
+  Apollo.io      — 300 exports/month on Basic, unlimited on Pro
+  Make.com       — 1000 operations/month free, 10k on Core, unlimited Pro
+
+
+===============================================================================
+APOLLO CSV FORMAT
+===============================================================================
+
+When exporting from Apollo.io, make sure these columns are included:
+
+  first_name, last_name, email, company, title, linkedin_url,
+  city, state, company_size, industry
+
+Recommended Apollo search filters for insurance broker leads:
+  - Job Titles: Insurance Broker, Independent Agent, Agency Owner
+  - Seniority: Owner, Founder, C-Suite, Partner
+  - Company Size: 1-10 employees
+  - Location: United States (or specific states)
+  - Email Status: Verified only
+
+
+===============================================================================
+                          END OF SETUP GUIDE
+===============================================================================

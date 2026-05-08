@@ -1,0 +1,221 @@
+{
+  "name": "BrokerPipeline — New Client Onboarding",
+  "description": "Triggered when a new PayPal subscription is created. Creates client in Supabase, sends welcome email, sets up Instantly campaign, notifies admin, and schedules Aria first call.",
+  "flow": [
+    {
+      "id": 1,
+      "module": "gateway:CustomWebHook",
+      "label": "PayPal Subscription Created Webhook",
+      "description": "Receives POST from PayPal when subscription BILLING.SUBSCRIPTION.CREATED fires",
+      "mapper": {},
+      "parameters": {
+        "hook": "{{PAYPAL_WEBHOOK_ID}}",
+        "maxResults": 1
+      },
+      "metadata": {
+        "notes": "Configure PayPal Developer Dashboard → Webhooks → Add webhook URL from Make. Subscribe to event: BILLING.SUBSCRIPTION.CREATED. Expected payload fields: resource.id (subscription_id), resource.subscriber.email_address, resource.subscriber.name.given_name, resource.subscriber.name.surname, resource.plan_id, resource.status"
+      }
+    },
+    {
+      "id": 2,
+      "module": "util:SetVariable",
+      "label": "Parse Client Data",
+      "description": "Extract and normalize client info from PayPal webhook payload",
+      "mapper": {
+        "name": "clientData",
+        "value": {
+          "email": "{{1.resource.subscriber.email_address}}",
+          "first_name": "{{1.resource.subscriber.name.given_name}}",
+          "last_name": "{{1.resource.subscriber.name.surname}}",
+          "full_name": "{{1.resource.subscriber.name.given_name}} {{1.resource.subscriber.name.surname}}",
+          "subscription_id": "{{1.resource.id}}",
+          "plan_id": "{{1.resource.plan_id}}",
+          "plan_name": "{{ifempty(if(1.resource.plan_id = 'P-0SM6782952597135PNH6EVSI'; 'Starter'; if(1.resource.plan_id = 'P-2NL30977D56624512NH6EWZI'; 'Growth'; if(1.resource.plan_id = 'P-30A14565R8285861LNH6EXJA'; 'Scale'; 'Unknown'))); 'Unknown')}}",
+          "monthly_price": "{{if(1.resource.plan_id = 'P-0SM6782952597135PNH6EVSI'; 1497; if(1.resource.plan_id = 'P-2NL30977D56624512NH6EWZI'; 3497; if(1.resource.plan_id = 'P-30A14565R8285861LNH6EXJA'; 6997; 0)))}}",
+          "status": "Active"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "module": "supabase:ActionInsertRow",
+      "label": "Create Client in Supabase",
+      "description": "Insert new client record into client_onboarding table",
+      "mapper": {
+        "table": "client_onboarding",
+        "row": {
+          "email": "{{2.clientData.email}}",
+          "full_name": "{{2.clientData.full_name}}",
+          "plan": "{{2.clientData.plan_name}}",
+          "status": "Active",
+          "subscription_id": "{{2.clientData.subscription_id}}",
+          "monthly_price": "{{2.clientData.monthly_price}}",
+          "onboarded_at": "{{now}}",
+          "completed": false
+        }
+      },
+      "parameters": {
+        "connection": "{{SUPABASE_CONNECTION_ID}}"
+      },
+      "metadata": {
+        "notes": "Uses Supabase connection with service_role key. The user_id will be auto-generated. Make sure RLS allows service_role inserts."
+      }
+    },
+    {
+      "id": 4,
+      "module": "http:ActionSendData",
+      "label": "Send Welcome Email via Resend",
+      "description": "Send branded welcome email with onboarding instructions",
+      "mapper": {
+        "url": "https://api.resend.com/emails",
+        "method": "POST",
+        "headers": [
+          {
+            "name": "Authorization",
+            "value": "Bearer {{RESEND_API_KEY}}"
+          },
+          {
+            "name": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "from": "BrokerPipeline <onboarding@resend.dev>",
+          "to": ["{{2.clientData.email}}"],
+          "subject": "Welcome to BrokerPipeline — Let's Fill Your Calendar!",
+          "html": "<div style='font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;max-width:560px;margin:0 auto;padding:32px;background:#ffffff;border-radius:12px;'><div style='margin-bottom:24px;'><span style='font-size:18px;font-weight:700;color:#111;'>BrokerPipeline<span style='color:#2563EB;'>.ai</span></span></div><h2 style='font-size:22px;color:#111;margin:0 0 16px;'>Welcome aboard, {{2.clientData.first_name}}! 🎉</h2><p style='font-size:15px;color:#333;line-height:1.6;margin:0 0 20px;'>You're now on the <strong>{{2.clientData.plan_name}} plan</strong>. Our team is already building your lead pipeline.</p><div style='background:#f8f9fa;border-radius:8px;padding:16px 20px;margin-bottom:20px;'><p style='margin:0 0 8px;font-size:15px;font-weight:600;'>What happens next:</p><p style='margin:0 0 6px;font-size:14px;color:#555;'>1. We research your ideal client profile (ICP)</p><p style='margin:0 0 6px;font-size:14px;color:#555;'>2. AI sources qualified leads in your area</p><p style='margin:0 0 6px;font-size:14px;color:#555;'>3. Personalized outreach begins within 48 hours</p><p style='margin:0;font-size:14px;color:#555;'>4. Appointments start landing on your calendar</p></div><a href='https://brokerpipeline.vercel.app/onboarding.html' style='display:inline-block;background-color:#2563EB;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;padding:12px 28px;border-radius:50px;'>Complete Your Profile →</a><p style='font-size:13px;color:#999;margin-top:24px;'>Questions? Just reply to this email.</p></div>"
+        }
+      },
+      "metadata": {
+        "notes": "Replace {{RESEND_API_KEY}} with your actual Resend API key stored in Make scenario variables. Once you have a custom domain verified in Resend, change 'from' to your domain."
+      }
+    },
+    {
+      "id": 5,
+      "module": "http:ActionSendData",
+      "label": "Create Instantly Campaign",
+      "description": "Create a new email campaign in Instantly.ai for this client's outreach",
+      "mapper": {
+        "url": "https://api.instantly.ai/api/v1/campaign/create",
+        "method": "POST",
+        "headers": [
+          {
+            "name": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "api_key": "{{INSTANTLY_API_KEY}}",
+          "campaign_name": "BP — {{2.clientData.full_name}} — {{2.clientData.plan_name}} — {{formatDate(now; 'YYYY-MM')}}",
+          "daily_limit": "{{if(2.clientData.plan_name = 'Starter'; 30; if(2.clientData.plan_name = 'Growth'; 60; 100))}}",
+          "stop_on_reply": true,
+          "stop_on_auto_reply": true,
+          "tracking_enabled": true
+        }
+      },
+      "metadata": {
+        "notes": "Store the campaign_id from the response — you'll need it in Scenario 2 to push leads. Daily send limits: Starter=30, Growth=60, Scale=100."
+      }
+    },
+    {
+      "id": 6,
+      "module": "supabase:ActionUpdateRow",
+      "label": "Save Campaign ID to Supabase",
+      "description": "Update client record with Instantly campaign ID for future lead pushing",
+      "mapper": {
+        "table": "client_onboarding",
+        "id": "{{3.id}}",
+        "row": {
+          "instantly_campaign_id": "{{5.campaign_id}}",
+          "setup_status": "campaign_created"
+        }
+      },
+      "parameters": {
+        "connection": "{{SUPABASE_CONNECTION_ID}}"
+      }
+    },
+    {
+      "id": 7,
+      "module": "http:ActionSendData",
+      "label": "Notify Admin via Resend",
+      "description": "Send internal notification to admin about new client signup",
+      "mapper": {
+        "url": "https://api.resend.com/emails",
+        "method": "POST",
+        "headers": [
+          {
+            "name": "Authorization",
+            "value": "Bearer {{RESEND_API_KEY}}"
+          },
+          {
+            "name": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "from": "BrokerPipeline System <onboarding@resend.dev>",
+          "to": ["admin@brokerpipeline.ai"],
+          "subject": "🚀 New Client Signup — {{2.clientData.full_name}} ({{2.clientData.plan_name}})",
+          "html": "<h2>New Client Alert</h2><p><strong>Name:</strong> {{2.clientData.full_name}}</p><p><strong>Email:</strong> {{2.clientData.email}}</p><p><strong>Plan:</strong> {{2.clientData.plan_name}} (${{2.clientData.monthly_price}}/mo)</p><p><strong>Subscription ID:</strong> {{2.clientData.subscription_id}}</p><p><strong>Instantly Campaign:</strong> {{5.campaign_id}}</p><p><a href='https://brokerpipeline.vercel.app/admin.html'>View in Admin Dashboard</a></p>"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "module": "http:ActionSendData",
+      "label": "Schedule Aria First Call via Retell",
+      "description": "Schedule Aria AI voice agent to call the new client for onboarding within 30 minutes",
+      "mapper": {
+        "url": "https://api.retellai.com/v2/create-phone-call",
+        "method": "POST",
+        "headers": [
+          {
+            "name": "Authorization",
+            "value": "Bearer {{RETELL_API_KEY}}"
+          },
+          {
+            "name": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "agent_id": "{{RETELL_AGENT_ID}}",
+          "customer_number": "{{2.clientData.phone}}",
+          "retell_llm_dynamic_variables": {
+            "first_name": "{{2.clientData.first_name}}",
+            "plan_name": "{{2.clientData.plan_name}}",
+            "call_type": "welcome_onboarding"
+          },
+          "metadata": {
+            "client_email": "{{2.clientData.email}}",
+            "subscription_id": "{{2.clientData.subscription_id}}"
+          }
+        }
+      },
+      "metadata": {
+        "notes": "This requires the client's phone number. If not available from PayPal, add a Router module before this step: if phone exists → call Retell, else → skip. The Retell agent should use the welcome/onboarding script variant. Replace RETELL_AGENT_ID with your Aria agent ID from Retell dashboard."
+      }
+    }
+  ],
+  "scheduling": {
+    "type": "webhook",
+    "trigger": "PayPal BILLING.SUBSCRIPTION.CREATED"
+  },
+  "variables": {
+    "SUPABASE_CONNECTION_ID": "Your Make.com Supabase connection ID",
+    "RESEND_API_KEY": "re_xxxx (from Resend dashboard)",
+    "INSTANTLY_API_KEY": "Your Instantly.ai API key",
+    "RETELL_API_KEY": "Your Retell AI API key",
+    "RETELL_AGENT_ID": "Your Aria agent ID from Retell",
+    "PAYPAL_WEBHOOK_ID": "Auto-generated when you create the webhook in Make"
+  },
+  "error_handling": {
+    "strategy": "break_and_rollback",
+    "notifications": true,
+    "retry": {
+      "enabled": true,
+      "max_attempts": 3,
+      "interval_minutes": 5
+    }
+  }
+}

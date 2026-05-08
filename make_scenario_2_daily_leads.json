@@ -1,0 +1,292 @@
+{
+  "name": "BrokerPipeline — Daily Lead Pipeline",
+  "description": "Runs daily at 8am EST. Checks active clients, pulls leads from Apollo CSV in Google Drive, pushes to Instantly campaigns, updates Supabase dashboard, and sends admin summary.",
+  "flow": [
+    {
+      "id": 1,
+      "module": "builtin:BasicScheduler",
+      "label": "Daily 8am EST Trigger",
+      "description": "Runs every day at 8:00 AM Eastern Time",
+      "parameters": {
+        "type": "day",
+        "time": "08:00",
+        "timezone": "America/New_York"
+      }
+    },
+    {
+      "id": 2,
+      "module": "supabase:ActionSearchRows",
+      "label": "Get Active Clients from Supabase",
+      "description": "Fetch all clients with status Active who have a linked Instantly campaign",
+      "mapper": {
+        "table": "client_onboarding",
+        "filter": {
+          "operator": "and",
+          "conditions": [
+            {
+              "field": "status",
+              "operator": "eq",
+              "value": "Active"
+            },
+            {
+              "field": "instantly_campaign_id",
+              "operator": "neq",
+              "value": ""
+            }
+          ]
+        },
+        "select": "user_id, full_name, email, plan, instantly_campaign_id, icp_titles, icp_industries, icp_locations, icp_company_size"
+      },
+      "parameters": {
+        "connection": "{{SUPABASE_CONNECTION_ID}}"
+      }
+    },
+    {
+      "id": 3,
+      "module": "builtin:BasicIterator",
+      "label": "Loop Through Each Active Client",
+      "description": "Process each active client one at a time",
+      "mapper": {
+        "array": "{{2.results}}"
+      }
+    },
+    {
+      "id": 4,
+      "module": "google-drive:ActionSearchFiles",
+      "label": "Find Apollo CSV in Google Drive",
+      "description": "Search for the latest Apollo export CSV for this client in their Google Drive folder",
+      "mapper": {
+        "query": "'{{GOOGLE_DRIVE_LEADS_FOLDER_ID}}' in parents and name contains '{{3.full_name}}' and name contains 'apollo' and mimeType = 'text/csv'",
+        "orderBy": "modifiedTime desc",
+        "maxResults": 1
+      },
+      "parameters": {
+        "connection": "{{GOOGLE_DRIVE_CONNECTION_ID}}"
+      },
+      "metadata": {
+        "notes": "Folder structure: Google Drive → BrokerPipeline Leads → [Client Name] → apollo-leads-YYYY-MM-DD.csv. Alternative: Use Apollo API directly instead of CSV if you have Apollo API access. The CSV should have columns: first_name, last_name, email, company, title, linkedin_url, location"
+      }
+    },
+    {
+      "id": 5,
+      "module": "google-drive:ActionDownloadFile",
+      "label": "Download Apollo CSV",
+      "description": "Download the CSV file content for parsing",
+      "mapper": {
+        "fileId": "{{4.id}}"
+      },
+      "parameters": {
+        "connection": "{{GOOGLE_DRIVE_CONNECTION_ID}}"
+      }
+    },
+    {
+      "id": 6,
+      "module": "csv:ActionParseCSV",
+      "label": "Parse CSV into Lead Records",
+      "description": "Parse the Apollo CSV into structured lead records",
+      "mapper": {
+        "csv": "{{5.data}}",
+        "delimiter": ",",
+        "hasHeaders": true,
+        "columns": [
+          {"name": "first_name", "type": "text"},
+          {"name": "last_name", "type": "text"},
+          {"name": "email", "type": "text"},
+          {"name": "company", "type": "text"},
+          {"name": "title", "type": "text"},
+          {"name": "linkedin_url", "type": "text"},
+          {"name": "city", "type": "text"},
+          {"name": "state", "type": "text"},
+          {"name": "company_size", "type": "text"},
+          {"name": "industry", "type": "text"}
+        ]
+      }
+    },
+    {
+      "id": 7,
+      "module": "builtin:BasicFilter",
+      "label": "Filter Valid Leads",
+      "description": "Only process leads with valid email addresses",
+      "mapper": {
+        "condition": "{{if(6.email; true; false)}}"
+      }
+    },
+    {
+      "id": 8,
+      "module": "http:ActionSendData",
+      "label": "Push Lead to Instantly Campaign",
+      "description": "Add each lead to the client's Instantly email campaign",
+      "mapper": {
+        "url": "https://api.instantly.ai/api/v1/lead/add",
+        "method": "POST",
+        "headers": [
+          {
+            "name": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "api_key": "{{INSTANTLY_API_KEY}}",
+          "campaign_id": "{{3.instantly_campaign_id}}",
+          "skip_if_in_workspace": true,
+          "leads": [
+            {
+              "email": "{{6.email}}",
+              "first_name": "{{6.first_name}}",
+              "last_name": "{{6.last_name}}",
+              "company_name": "{{6.company}}",
+              "personalization": "{{6.title}} at {{6.company}} in {{6.city}}, {{6.state}}",
+              "custom_variables": {
+                "title": "{{6.title}}",
+                "linkedin": "{{6.linkedin_url}}",
+                "city": "{{6.city}}",
+                "state": "{{6.state}}",
+                "industry": "{{6.industry}}",
+                "company_size": "{{6.company_size}}"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": 9,
+      "module": "http:ActionSendData",
+      "label": "Insert Lead into Supabase",
+      "description": "Add lead to client's leads table in Supabase for dashboard tracking",
+      "mapper": {
+        "url": "https://glokxezbcrelrndcbhhs.supabase.co/functions/v1/api-leads",
+        "method": "POST",
+        "headers": [
+          {
+            "name": "x-api-key",
+            "value": "{{BROKER_API_KEY}}"
+          },
+          {
+            "name": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "client_id": "{{3.user_id}}",
+          "name": "{{6.first_name}} {{6.last_name}}",
+          "email": "{{6.email}}",
+          "company": "{{6.company}}",
+          "title": "{{6.title}}",
+          "source": "Apollo",
+          "status": "New",
+          "score": 0,
+          "location": "{{6.city}}, {{6.state}}"
+        }
+      }
+    },
+    {
+      "id": 10,
+      "module": "builtin:BasicAggregator",
+      "label": "Aggregate Results Per Client",
+      "description": "Count total leads pushed for this client in today's batch",
+      "mapper": {
+        "groupBy": "{{3.user_id}}",
+        "aggregations": {
+          "total_leads": {"type": "count"},
+          "client_name": {"type": "first", "field": "{{3.full_name}}"},
+          "client_email": {"type": "first", "field": "{{3.email}}"}
+        }
+      }
+    },
+    {
+      "id": 11,
+      "module": "http:ActionSendData",
+      "label": "Update Daily Leads Count in Supabase",
+      "description": "Insert daily_leads record for dashboard reporting",
+      "mapper": {
+        "url": "https://glokxezbcrelrndcbhhs.supabase.co/rest/v1/daily_leads",
+        "method": "POST",
+        "headers": [
+          {
+            "name": "apikey",
+            "value": "{{SUPABASE_ANON_KEY}}"
+          },
+          {
+            "name": "Authorization",
+            "value": "Bearer {{SUPABASE_SERVICE_ROLE_KEY}}"
+          },
+          {
+            "name": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "user_id": "{{3.user_id}}",
+          "date": "{{formatDate(now; 'YYYY-MM-DD')}}",
+          "count": "{{10.total_leads}}",
+          "source": "Apollo CSV"
+        }
+      }
+    },
+    {
+      "id": 12,
+      "module": "builtin:BasicAggregator",
+      "label": "Aggregate All Clients Summary",
+      "description": "Collect totals across all clients for admin summary",
+      "mapper": {
+        "aggregations": {
+          "total_clients_processed": {"type": "count"},
+          "total_leads_pushed": {"type": "sum", "field": "{{10.total_leads}}"},
+          "client_summaries": {"type": "collect", "field": "{{10.client_name}}: {{10.total_leads}} leads"}
+        }
+      }
+    },
+    {
+      "id": 13,
+      "module": "http:ActionSendData",
+      "label": "Send Daily Summary to Admin",
+      "description": "Email admin with summary of today's lead pipeline activity",
+      "mapper": {
+        "url": "https://api.resend.com/emails",
+        "method": "POST",
+        "headers": [
+          {
+            "name": "Authorization",
+            "value": "Bearer {{RESEND_API_KEY}}"
+          },
+          {
+            "name": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "from": "BrokerPipeline System <onboarding@resend.dev>",
+          "to": ["admin@brokerpipeline.ai"],
+          "subject": "📊 Daily Lead Report — {{formatDate(now; 'MMM D, YYYY')}} — {{12.total_leads_pushed}} leads pushed",
+          "html": "<div style='font-family:-apple-system,sans-serif;max-width:560px;margin:0 auto;padding:32px;'><h2 style='color:#111;'>Daily Lead Pipeline Summary</h2><p style='color:#555;font-size:15px;'>Date: {{formatDate(now; 'dddd, MMMM D, YYYY')}}</p><div style='background:#f0f7ff;border-radius:8px;padding:20px;margin:20px 0;'><p style='margin:0 0 8px;font-size:24px;font-weight:700;color:#2563EB;'>{{12.total_leads_pushed}} leads pushed</p><p style='margin:0;font-size:14px;color:#666;'>Across {{12.total_clients_processed}} active clients</p></div><h3 style='color:#333;'>Breakdown by Client:</h3><ul style='color:#555;font-size:14px;line-height:2;'>{{12.client_summaries}}</ul><a href='https://brokerpipeline.vercel.app/admin.html' style='display:inline-block;background:#2563EB;color:#fff;padding:10px 24px;border-radius:50px;text-decoration:none;font-size:14px;font-weight:600;'>View Admin Dashboard →</a></div>"
+        }
+      }
+    }
+  ],
+  "scheduling": {
+    "type": "scheduled",
+    "interval": "daily",
+    "time": "08:00",
+    "timezone": "America/New_York"
+  },
+  "variables": {
+    "SUPABASE_CONNECTION_ID": "Your Make.com Supabase connection ID",
+    "SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9... (from Supabase project settings)",
+    "SUPABASE_SERVICE_ROLE_KEY": "Your Supabase service role key",
+    "BROKER_API_KEY": "Your BrokerPipeline API key (same as Edge Functions)",
+    "GOOGLE_DRIVE_CONNECTION_ID": "Your Make.com Google Drive connection ID",
+    "GOOGLE_DRIVE_LEADS_FOLDER_ID": "Google Drive folder ID containing Apollo CSVs",
+    "INSTANTLY_API_KEY": "Your Instantly.ai API key",
+    "RESEND_API_KEY": "Your Resend API key"
+  },
+  "error_handling": {
+    "strategy": "continue_on_error",
+    "notifications": true,
+    "retry": {
+      "enabled": true,
+      "max_attempts": 2,
+      "interval_minutes": 10
+    }
+  }
+}
