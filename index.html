@@ -161,8 +161,27 @@
             const ref = useFadeIn();
             return (
                 <section className="relative pt-32 pb-20 px-6 overflow-hidden">
-                    <div className="gradient-blur top-0 left-1/2 -translate-x-1/2 -translate-y-1/2"></div>
-                    <div ref={ref} className="fade-in max-w-4xl mx-auto text-center relative z-10">
+                    {/* Hero Background Image */}
+                    <img
+                        src="assets/hero-bg.jpg"
+                        alt=""
+                        aria-hidden="true"
+                        className="absolute inset-0 w-full h-full object-cover object-center"
+                        style={{ zIndex: 0 }}
+                        onError={(e) => { e.target.style.display = 'none'; }}
+                    />
+                    {/* Dark overlay for text readability */}
+                    <div className="absolute inset-0" style={{
+                        background: 'linear-gradient(to bottom, rgba(10,10,10,0.7), rgba(10,10,10,0.9))',
+                        zIndex: 1
+                    }}></div>
+                    {/* Extra mobile overlay */}
+                    <div className="absolute inset-0 md:hidden" style={{
+                        background: 'rgba(10,10,10,0.15)',
+                        zIndex: 1
+                    }}></div>
+                    <div className="gradient-blur top-0 left-1/2 -translate-x-1/2 -translate-y-1/2" style={{ zIndex: 2 }}></div>
+                    <div ref={ref} className="fade-in max-w-4xl mx-auto text-center relative" style={{ zIndex: 10 }}>
                         <div className="inline-flex items-center gap-2 bg-blue-500/10 border border-blue-500/20 rounded-full px-4 py-1.5 mb-8">
                             <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
                             <span className="text-sm text-blue-400">AI-Powered Insurance Growth</span>
